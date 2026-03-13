@@ -508,4 +508,13 @@ class DatabaseHelper {
     ''', [programaId]);
     return res.map((row) => row['name'] as String).toList();
   }
+
+  Future<int> deleteSampleGroupByStation(String stationName) async {
+    final db = await database;
+    return await db.delete(
+      'historial_muestras',
+      where: 'estacion = ?',
+      whereArgs: [stationName],
+    );
+  }
 }

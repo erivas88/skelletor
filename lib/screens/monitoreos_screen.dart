@@ -60,7 +60,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   String _formatDate(String isoStr) {
     try {
       final dt = DateTime.parse(isoStr);
-      return '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')}/${dt.year} ${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return isoStr;
     }
@@ -72,12 +72,13 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
     final colorGris = isDarkMode ? Colors.grey.shade400 : Colors.black54;
 
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Monitoreos'),
         actions: [
           IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
           IconButton(
-            icon: const Icon(Icons.delete_outline), 
+            icon: const Icon(Icons.delete_outline),
             onPressed: () => _confirmarEliminarTodo(context),
           ),
           IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
@@ -86,89 +87,164 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
       drawer: const AppDrawer(currentRoute: '/monitoreos'),
       body: Column(
         children: [
-          // 1. Search Bar
+          // 1. Modern Pill Search Bar
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar',
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                boxShadow: isDarkMode
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Buscar registro...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide(
+                        color: Theme.of(context).primaryColor.withOpacity(0.5),
+                        width: 1),
+                  ),
+                ),
               ),
             ),
           ),
 
-          // 2. Summary Bar
-          ListTile(
-            leading: const Icon(Icons.engineering, color: Colors.blueAccent, size: 28),
-            title: Text('Total Monitoreos', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(color: Colors.greenAccent, borderRadius: BorderRadius.circular(12)),
-              child: Text('${_filteredMonitoreos.length}', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          // 2. Summary Card
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Card(
+              elevation: 1,
+              color: isDarkMode ? null : Colors.blue.withAlpha(10),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.blueAccent.withAlpha(30),
+                  child: const Icon(Icons.engineering, color: Colors.blueAccent),
+                ),
+                title: Text('Total Monitoreos',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onSurface)),
+                trailing: Chip(
+                  label: Text('${_filteredMonitoreos.length}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  backgroundColor: isDarkMode
+                      ? Colors.green.withAlpha(50)
+                      : const Color(0xFFC8E6C9),
+                ),
+              ),
             ),
           ),
-          const Divider(height: 1),
 
           // 3. ListView
           Expanded(
-            child: _isLoading 
+            child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredMonitoreos.isEmpty
                     ? const Center(child: Text('No hay registros de monitoreo'))
-                    : ListView.separated(
+                    : ListView.builder(
                         itemCount: _filteredMonitoreos.length,
-                        separatorBuilder: (ctx, i) => const Divider(height: 1),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         itemBuilder: (ctx, index) {
                           final item = _filteredMonitoreos[index];
-                          return Dismissible(
-                            key: Key(item['id'].toString()),
-                            direction: DismissDirection.endToStart,
-                            background: Container(
-                              color: Colors.red,
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: const Icon(Icons.delete, color: Colors.white),
-                            ),
-                            onDismissed: (direction) async {
-                              await _dbHelper.deleteRegistroMonitoreo(item['id']);
-                              setState(() {
-                                _monitoreos.removeWhere((m) => m['id'] == item['id']);
-                                _filterMonitoreos(); // Refresh filtered list
-                              });
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Registro eliminado')),
-                                );
-                              }
-                            },
-                            child: ListTile(
-                              leading: const Icon(Icons.location_on, color: Colors.blueAccent, size: 28),
-                              title: Text(item['estacion_name'] ?? 'Sin Estación', style: const TextStyle(fontWeight: FontWeight.w500)),
-                              subtitle: Text(_formatDate(item['fecha_hora'] ?? '')),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.done_all, color: Colors.green, size: 20),
-                                  const SizedBox(width: 8),
-                                  InkWell(
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 6),
+                            child: Dismissible(
+                              key: Key(item['id'].toString()),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                alignment: Alignment.centerRight,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 20),
+                                child: const Icon(Icons.delete_outline,
+                                    color: Colors.white),
+                              ),
+                              onDismissed: (direction) async {
+                                await _dbHelper.deleteRegistroMonitoreo(item['id']);
+                                setState(() {
+                                  _monitoreos.removeWhere(
+                                      (m) => m['id'] == item['id']);
+                                  _filterMonitoreos();
+                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text('Registro eliminado')),
+                                  );
+                                }
+                              },
+                              child: Card(
+                                margin: EdgeInsets.zero,
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 8),
+                                  leading: CircleAvatar(
+                                    backgroundColor:
+                                        Colors.blueAccent.withAlpha(20),
+                                    child: const Icon(Icons.location_on,
+                                        color: Colors.blueAccent),
+                                  ),
+                                  title: Text(
+                                      item['estacion_name'] ?? 'Sin Estación',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16)),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _formatDate(item['fecha_hora'] ?? ''),
+                                        style: TextStyle(
+                                            color: colorGris, fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.done_all,
+                                          color: Colors.green, size: 18),
+                                      const SizedBox(width: 4),
+                                      Icon(Icons.chevron_right,
+                                          color: colorGris, size: 20),
+                                    ],
+                                  ),
                                   onTap: () {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => RegistrarMonitoreoScreen(registroId: item['id']),
+                                        builder: (context) =>
+                                            RegistrarMonitoreoScreen(
+                                                registroId: item['id']),
                                       ),
                                     ).then((_) => _loadMonitoreos());
                                   },
-                                    child: Icon(Icons.chevron_right, color: colorGris),
-                                  ),
-                                ],
+                                ),
                               ),
-                              onTap: () {
-                                // Ver detalle
-                              },
                             ),
                           );
                         },
@@ -183,12 +259,15 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
     final bool? confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Eliminar Todos los Registros', style: TextStyle(color: Colors.red)),
-        content: const Text('¿Está seguro de que desea eliminar TODOS los monitoreos guardados localmente? Esta acción no se puede deshacer.'),
+        title: const Text('Eliminar Todos los Registros',
+            style: TextStyle(color: Colors.red)),
+        content: const Text(
+            '¿Está seguro de que desea eliminar TODOS los monitoreos guardados localmente? Esta acción no se puede deshacer.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCELAR', style: TextStyle(color: Colors.blueAccent)),
+            child: const Text('CANCELAR',
+                style: TextStyle(color: Colors.blueAccent)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),

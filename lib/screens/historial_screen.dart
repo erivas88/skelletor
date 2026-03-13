@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:collection/collection.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 
@@ -11,60 +12,138 @@ class HistorialScreen extends StatefulWidget {
 
 class _HistorialScreenState extends State<HistorialScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
-  List<Map<String, dynamic>> _muestras = [];
-  List<Map<String, dynamic>> _filteredMuestras = [];
+  List<Map<String, dynamic>> _groupedPoints = [];
+  List<Map<String, dynamic>> _filteredPoints = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loadMuestras();
+    _loadData();
   }
 
-  Future<void> _loadMuestras() async {
+  Future<void> _loadData() async {
     setState(() => _isLoading = true);
     final data = await _dbHelper.getHistorialMuestras();
+
+    // Grouping in Dart using collection package
+    final grouped = groupBy(data, (Map m) => m['estacion'] ?? 'Sin Estación');
+
+    final List<Map<String, dynamic>> processedPoints =
+        grouped.entries.map((entry) {
+      final samples = entry.value;
+      // Sort samples by date descending to get the last sync date
+      samples.sort((a, b) => (b['fecha'] ?? '').compareTo(a['fecha'] ?? ''));
+
+      return {
+        'estacion': entry.key,
+        'count': samples.length,
+        'last_sync_date': samples.first['fecha'] ?? 'N/A',
+      };
+    }).toList();
+
     setState(() {
-      _muestras = data;
-      _filteredMuestras = data;
+      _groupedPoints = processedPoints;
+      _filteredPoints = processedPoints;
       _isLoading = false;
     });
   }
 
-  void _filterMuestras(String query) {
+  void _filterPoints(String query) {
     setState(() {
-      _filteredMuestras = _muestras
-          .where((m) =>
-              (m['estacion'] ?? '').toLowerCase().contains(query.toLowerCase()) ||
-              (m['certificado'] ?? '').toLowerCase().contains(query.toLowerCase()))
+      _filteredPoints = _groupedPoints
+          .where((p) =>
+              (p['estacion'] ?? '').toLowerCase().contains(query.toLowerCase()))
           .toList();
     });
   }
 
+  Future<void> _deleteStationGroup(String stationName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Borrado'),
+        content: Text(
+            '¿Desea eliminar TODAS las muestras de la estación "$stationName"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCELAR'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('ELIMINAR'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _dbHelper.deleteSampleGroupByStation(stationName);
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Estación $stationName eliminada')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Historial de Muestras'),
+        actions: [
+          IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.delete_outline), onPressed: () {}),
+        ],
       ),
       drawer: const AppDrawer(currentRoute: '/historial'),
       body: Column(
         children: [
-          // Search Bar
+          // Search Bar - Relaxed Pill Shape
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              onChanged: _filterMuestras,
-              decoration: InputDecoration(
-                hintText: 'Buscar por estación o certificado...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                filled: true,
-                fillColor: isDarkMode ? Colors.grey[900] : Colors.white,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                boxShadow: isDarkMode
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: _filterPoints,
+                decoration: InputDecoration(
+                  hintText: 'Buscar punto de monitoreo...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide(
+                        color: theme.primaryColor.withOpacity(0.5), width: 1),
+                  ),
+                ),
               ),
             ),
           ),
@@ -72,85 +151,105 @@ class _HistorialScreenState extends State<HistorialScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredMuestras.isEmpty
-                    ? const Center(child: Text('No se encontraron muestras'))
+                : _filteredPoints.isEmpty
+                    ? const Center(
+                        child: Text('No se encontraron puntos de monitoreo'))
                     : ListView.builder(
-                        itemCount: _filteredMuestras.length,
-                        padding: const EdgeInsets.only(bottom: 20),
+                        itemCount: _filteredPoints.length,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         itemBuilder: (context, index) {
-                          final item = _filteredMuestras[index];
-                          return _buildMuestraCard(item, isDarkMode);
+                          final point = _filteredPoints[index];
+                          final stationName = point['estacion'];
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 6),
+                            child: Dismissible(
+                              key: Key(stationName),
+                              direction: DismissDirection.endToStart,
+                              confirmDismiss: (direction) async {
+                                await _deleteStationGroup(stationName);
+                                return false;
+                              },
+                              background: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                alignment: Alignment.centerRight,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 20),
+                                child: const Icon(Icons.delete_outline,
+                                    color: Colors.white),
+                              ),
+                              child: Card(
+                                margin: EdgeInsets.zero,
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 8),
+                                  leading: CircleAvatar(
+                                    backgroundColor: isDarkMode
+                                        ? Colors.blueAccent.withAlpha(30)
+                                        : const Color(
+                                            0xFFE3F2FD), // Light gray-blue
+                                    child: const Icon(Icons.science,
+                                        color: Colors.blueAccent),
+                                  ),
+                                  title: Text(
+                                    stationName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF212121), // Primary black
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Última sincronización',
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: theme.hintColor),
+                                      ),
+                                      Text(
+                                        point['last_sync_date'],
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFF757575)),
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        '${point['count']}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18,
+                                          color: theme.primaryColor,
+                                        ),
+                                      ),
+                                      const Text(
+                                        'muestras',
+                                        style: TextStyle(
+                                            fontSize: 10, color: Colors.grey),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () {},
+                                ),
+                              ),
+                            ),
+                          );
                         },
                       ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildMuestraCard(Map<String, dynamic> item, bool isDarkMode) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.science, color: Colors.blueAccent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    item['estacion'] ?? 'Sin Estación',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
-                Text(
-                  item['fecha'] ?? '',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Certificado: ${item['certificado'] ?? 'N/A'}',
-              style: TextStyle(color: Colors.blueAccent.withOpacity(0.8), fontWeight: FontWeight.w500),
-            ),
-            const Divider(height: 24),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                _buildParam('pH', item['ph']),
-                _buildParam('Cond.', item['conductividad'], unit: 'µS/cm'),
-                _buildParam('SDT', item['SDT'], unit: 'mg/L'),
-                _buildParam('Nivel', item['nivel'], unit: 'm'),
-                _buildParam('Caudal', item['caudal'], unit: 'L/s'),
-                _buildParam('Temp.', item['temperatura'], unit: '°C'),
-                _buildParam('O2', item['oxigeno'], unit: 'mg/L'),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildParam(String label, dynamic value, {String unit = ''}) {
-    if (value == null) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.blueAccent.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        '$label: $value $unit',
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
       ),
     );
   }

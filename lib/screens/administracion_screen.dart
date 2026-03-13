@@ -25,13 +25,18 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<Map<String, dynamic>> _estacionesConPrograma = [];
   List<Map<String, dynamic>> _equipos = [];
   List<TipoEquipo> _tiposEquipo = [];
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(() {
-      setState(() {}); // For FAB logic
+      if (!_tabController.indexIsChanging) {
+        setState(() {
+          _searchQuery = '';
+        });
+      }
     });
     _loadAllData();
   }
@@ -150,8 +155,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre Programa')),
                 ] else if (type == 'Estación') ...[
                   TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre')),
-                  TextField(controller: c2, decoration: const InputDecoration(labelText: 'Latitud'), keyboardType: TextInputType.number),
-                  TextField(controller: c3, decoration: const InputDecoration(labelText: 'Longitud'), keyboardType: TextInputType.number),
+                  TextField(controller: c2, decoration: const InputDecoration(labelText: 'Norte'), keyboardType: TextInputType.number),
+                  TextField(controller: c3, decoration: const InputDecoration(labelText: 'Este'), keyboardType: TextInputType.number),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<int>(
                     value: selectedProgramId,
@@ -265,6 +270,10 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
           tabs: const [
             Tab(text: 'Usuarios'),
             Tab(text: 'Métodos'),
@@ -301,86 +310,192 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
 
   Widget _buildTabList(List<dynamic> items, String type) {
     if (items.isEmpty) return const Center(child: Text('Sin datos'));
-    return ListView.builder(
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        String title = '';
-        String subtitle = '';
-        int id = 0;
 
-        if (type == 'Usuario') {
-          title = '${item.nombre} ${item.apellido}';
-          subtitle = 'ID: ${item.idUsuario}';
-          id = item.idUsuario;
-        } else if (type == 'Método') {
-          title = item.metodo;
-          subtitle = 'ID: ${item.idMetodo}';
-          id = item.idMetodo;
-        } else if (type == 'Matriz') {
-          title = item.nombreMatriz;
-          subtitle = 'ID: ${item.idMatriz}';
-          id = item.idMatriz;
-        } else if (type == 'Programa') {
-          title = item.name;
-          subtitle = 'ID: ${item.id}';
-          id = item.id;
-        }
+    final filteredItems = items.where((item) {
+      if (_searchQuery.isEmpty) return true;
+      String searchField = '';
+      if (type == 'Usuario') {
+        searchField = '${item.nombre} ${item.apellido}';
+      } else if (type == 'Método') {
+        searchField = item.metodo;
+      } else if (type == 'Matriz') {
+        searchField = item.nombreMatriz;
+      } else if (type == 'Programa') {
+        searchField = item.name;
+      }
+      return searchField.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
 
-        return ListTile(
-          title: Text(title),
-          subtitle: Text(subtitle),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFormDialog(item: item, type: type)),
-              IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDelete(id, type)),
-            ],
+    return Column(
+      children: [
+        if (items.length > 11)
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Buscar...',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+            ),
           ),
-        );
-      },
+        Expanded(
+          child: ListView.builder(
+            itemCount: filteredItems.length,
+            itemBuilder: (context, index) {
+              final item = filteredItems[index];
+              String title = '';
+              String subtitle = '';
+              int id = 0;
+
+              if (type == 'Usuario') {
+                title = '${item.nombre} ${item.apellido}';
+                subtitle = 'ID: ${item.idUsuario}';
+                id = item.idUsuario;
+              } else if (type == 'Método') {
+                title = item.metodo;
+                subtitle = 'ID: ${item.idMetodo}';
+                id = item.idMetodo;
+              } else if (type == 'Matriz') {
+                title = item.nombreMatriz;
+                subtitle = 'ID: ${item.idMatriz}';
+                id = item.idMatriz;
+              } else if (type == 'Programa') {
+                title = item.name;
+                subtitle = 'ID: ${item.id}';
+                id = item.id;
+              }
+
+              return ListTile(
+                title: Text(title),
+                subtitle: Text(subtitle),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () => _showFormDialog(item: item, type: type)),
+                    IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _confirmDelete(id, type)),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildStationsTab() {
     if (_estacionesConPrograma.isEmpty) return const Center(child: Text('Sin datos'));
-    return ListView.builder(
-      itemCount: _estacionesConPrograma.length,
-      itemBuilder: (context, index) {
-        final item = _estacionesConPrograma[index];
-        return ListTile(
-          title: Text(item['name']),
-          subtitle: Text('Programa: ${item['program_name'] ?? 'N/A'}'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFormDialog(item: item, type: 'Estación')),
-              IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDelete(item['id'], 'Estación')),
-            ],
+
+    final filteredItems = _estacionesConPrograma.where((item) {
+      if (_searchQuery.isEmpty) return true;
+      final name = (item['name'] ?? '').toString().toLowerCase();
+      return name.contains(_searchQuery.toLowerCase());
+    }).toList();
+
+    return Column(
+      children: [
+        if (_estacionesConPrograma.length > 11)
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Buscar...',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+            ),
           ),
-        );
-      },
+        Expanded(
+          child: ListView.builder(
+            itemCount: filteredItems.length,
+            itemBuilder: (context, index) {
+              final item = filteredItems[index];
+              return ListTile(
+                title: Text(item['name']),
+                subtitle: Text('Programa: ${item['program_name'] ?? 'N/A'}'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () =>
+                            _showFormDialog(item: item, type: 'Estación')),
+                    IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _confirmDelete(item['id'], 'Estación')),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildEquiposTab() {
     if (_equipos.isEmpty) return const Center(child: Text('Sin datos'));
-    return ListView.builder(
-      itemCount: _equipos.length,
-      itemBuilder: (context, index) {
-        final item = _equipos[index];
-        return ListTile(
-          title: Text(item['codigo'] ?? 'Sin código'),
-          subtitle: Text('Tipo: ${item['tipo'] ?? 'N/A'}'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFormDialog(item: item, type: 'Equipo')),
-              IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDelete(item['id'], 'Equipo')),
-            ],
+
+    final filteredItems = _equipos.where((item) {
+      if (_searchQuery.isEmpty) return true;
+      final codigo = (item['codigo'] ?? '').toString().toLowerCase();
+      return codigo.contains(_searchQuery.toLowerCase());
+    }).toList();
+
+    return Column(
+      children: [
+        if (_equipos.length > 11)
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Buscar...',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+            ),
           ),
-        );
-      },
+        Expanded(
+          child: ListView.builder(
+            itemCount: filteredItems.length,
+            itemBuilder: (context, index) {
+              final item = filteredItems[index];
+              return ListTile(
+                title: Text(item['codigo'] ?? 'Sin código'),
+                subtitle: Text('Tipo: ${item['tipo'] ?? 'N/A'}'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () => _showFormDialog(item: item, type: 'Equipo')),
+                    IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _confirmDelete(item['id'], 'Equipo')),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

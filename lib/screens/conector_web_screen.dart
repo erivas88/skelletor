@@ -170,12 +170,16 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
               onPressed: () {},
             ),
           ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'PROGRAMAS'),
-              Tab(text: 'MUESTRAS'),
-            ],
-          ),
+        bottom: const TabBar(
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          labelStyle: TextStyle(fontWeight: FontWeight.bold),
+          tabs: [
+            Tab(text: 'PROGRAMAS'),
+            Tab(text: 'MUESTRAS'),
+          ],
+        ),
         ),
         drawer: const AppDrawer(currentRoute: '/conector_web'),
         body: TabBarView(
@@ -189,31 +193,62 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
   }
 
   Widget _buildProgramasTab() {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.map_outlined,
-            size: 80,
-            color: Colors.greenAccent.shade400,
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.map_outlined,
+              size: 80,
+              color: theme.colorScheme.primary,
+            ),
           ),
-          const SizedBox(height: 10),
-          const Text(
+          const SizedBox(height: 20),
+          Text(
             'Actualizar Programas',
-            style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 40),
           if (_isLoading)
             const CircularProgressIndicator()
           else
-            OutlinedButton(
-              onPressed: _syncData,
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.blue),
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                gradient: LinearGradient(
+                  colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Text('ACTUALIZAR'),
+              child: ElevatedButton(
+                onPressed: _syncData,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 16),
+                ),
+                child: const Text(
+                  'ACTUALIZAR',
+                  style: TextStyle(fontSize: 16, color: Colors.white),
+                ),
+              ),
             ),
         ],
       ),
@@ -221,188 +256,186 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
   }
 
   Widget _buildMuestrasTab() {
-    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final Color containerColor = isDarkMode ? const Color(0xFF1E1E1E) : const Color(0xFFF3F4F6);
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Center(
             child: Column(
               children: [
-                Icon(Icons.cloud_download_outlined, color: Colors.greenAccent.shade400, size: 50),
+                Icon(Icons.cloud_download_outlined, color: theme.colorScheme.secondary, size: 50),
                 const SizedBox(height: 10),
-                const Text("Actualizar muestras", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                Text(
+                  "Actualizar muestras", 
+                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 30),
-          Container(
-            decoration: BoxDecoration(
-              color: containerColor,
-              borderRadius: BorderRadius.circular(4.0),
-            ),
-            child: Column(
-              children: [
-                // Custom Program Dropdown
-                ListTile(
-                  title: Row(
-                    children: [
-                      const Text("Programa", style: TextStyle(fontWeight: FontWeight.bold)),
-                      const Spacer(),
-                      Expanded(
-                        child: Text(
-                          _selectedProgram?.name ?? "Seleccione",
-                          style: TextStyle(color: _selectedProgram == null ? Colors.grey : null),
-                          textAlign: TextAlign.end,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  trailing: Icon(_expandPrograma ? Icons.expand_less : Icons.expand_more),
-                  onTap: () => setState(() => _expandPrograma = !_expandPrograma),
-                ),
-                if (_expandPrograma) ...[
-                  _buildBuscador(_searchProgramaController, "Buscar programa..."),
-                  SizedBox(
-                    height: 200,
-                    child: ListView.builder(
-                      itemCount: _programs.length,
-                      itemBuilder: (context, index) {
-                        final program = _programs[index];
-                        if (_searchProgramaController.text.isNotEmpty &&
-                            !program.name.toLowerCase().contains(_searchProgramaController.text.toLowerCase())) {
-                          return Container();
-                        }
-                        return InkWell(
-                          onTap: () => _onProgramChanged(program),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _selectedProgram == program ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                                  color: Colors.blue,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(child: Text(program.name)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-
-                const Divider(height: 1),
-
-                // Custom Station Dropdown
-                ListTile(
-                  title: Row(
-                    children: [
-                      const Text("Estaciones", style: TextStyle(fontWeight: FontWeight.bold)),
-                      const Spacer(),
-                      Text(
-                        _isAllStationsChecked ? "Todas" : "(${_selectedStations.length})",
-                        style: TextStyle(
-                          color: _selectedStations.isEmpty && !_isAllStationsChecked ? Colors.grey : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                  trailing: Icon(_expandEstaciones ? Icons.expand_less : Icons.expand_more),
-                  onTap: _selectedProgram == null || _isAllStationsChecked
-                      ? null
-                      : () => setState(() => _expandEstaciones = !_expandEstaciones),
-                ),
-                if (_expandEstaciones && !_isAllStationsChecked) ...[
-                  _buildBuscador(_searchEstacionController, "Buscar estación..."),
-                  SizedBox(
-                    height: 200,
-                    child: ListView.builder(
-                      itemCount: _stations.length,
-                      itemBuilder: (context, index) {
-                        final station = _stations[index];
-                        if (_searchEstacionController.text.isNotEmpty &&
-                            !station.name.toLowerCase().contains(_searchEstacionController.text.toLowerCase())) {
-                          return Container();
-                        }
-                        final isSelected = _selectedStations.contains(station);
-                        return InkWell(
-                          onTap: () {
-                            setState(() {
-                              if (isSelected) {
-                                _selectedStations.remove(station);
-                              } else {
-                                _selectedStations.add(station);
-                              }
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  isSelected ? Icons.check_box : Icons.check_box_outline_blank,
-                                  color: Colors.blue,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(child: Text(station.name)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-
-                const Divider(height: 1),
-
-                // Todas las estaciones Checkbox
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      _isAllStationsChecked = !_isAllStationsChecked;
-                      if (_isAllStationsChecked) {
-                        _selectedStations.clear();
-                        _expandEstaciones = false;
-                      }
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
+          Card(
+            elevation: isDarkMode ? 0 : 3,
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                children: [
+                  // Custom Program Dropdown
+                  ListTile(
+                    title: Row(
                       children: [
-                        Icon(
-                          _isAllStationsChecked ? Icons.check_box : Icons.check_box_outline_blank,
-                          color: Colors.blue,
+                        const Text("Programa", style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        Expanded(
+                          child: Text(
+                            _selectedProgram?.name ?? "Seleccione",
+                            style: TextStyle(color: _selectedProgram == null ? Colors.grey : null),
+                            textAlign: TextAlign.end,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        const SizedBox(width: 10),
-                        const Text("Todas las estaciones", style: TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
+                    trailing: Icon(
+                      _expandPrograma ? Icons.expand_less : Icons.expand_more,
+                      color: theme.primaryColor,
+                    ),
+                    onTap: () => setState(() => _expandPrograma = !_expandPrograma),
                   ),
-                ),
-              ],
+                  if (_expandPrograma) ...[
+                    _buildBuscador(_searchProgramaController, "Buscar programa..."),
+                    SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        itemCount: _programs.length,
+                        itemBuilder: (context, index) {
+                          final program = _programs[index];
+                          if (_searchProgramaController.text.isNotEmpty &&
+                              !program.name.toLowerCase().contains(_searchProgramaController.text.toLowerCase())) {
+                            return Container();
+                          }
+                          return ListTile(
+                            onTap: () => _onProgramChanged(program),
+                            leading: Icon(
+                              _selectedProgram == program ? Icons.check_circle : Icons.circle_outlined,
+                              color: theme.primaryColor,
+                            ),
+                            title: Text(program.name),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+
+                  const Divider(),
+
+                  // Custom Station Dropdown
+                  ListTile(
+                    title: Row(
+                      children: [
+                        const Text("Estaciones", style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        Text(
+                          _isAllStationsChecked ? "Todas" : "(${_selectedStations.length})",
+                          style: TextStyle(
+                            color: _selectedStations.isEmpty && !_isAllStationsChecked ? Colors.grey : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: Icon(
+                      _expandEstaciones ? Icons.expand_less : Icons.expand_more,
+                      color: theme.primaryColor,
+                    ),
+                    onTap: _selectedProgram == null || _isAllStationsChecked
+                        ? null
+                        : () => setState(() => _expandEstaciones = !_expandEstaciones),
+                  ),
+                  if (_expandEstaciones && !_isAllStationsChecked) ...[
+                    _buildBuscador(_searchEstacionController, "Buscar estación..."),
+                    SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        itemCount: _stations.length,
+                        itemBuilder: (context, index) {
+                          final station = _stations[index];
+                          if (_searchEstacionController.text.isNotEmpty &&
+                              !station.name.toLowerCase().contains(_searchEstacionController.text.toLowerCase())) {
+                            return Container();
+                          }
+                          final isSelected = _selectedStations.contains(station);
+                          return ListTile(
+                            onTap: () {
+                              setState(() {
+                                if (isSelected) {
+                                  _selectedStations.remove(station);
+                                } else {
+                                  _selectedStations.add(station);
+                                }
+                              });
+                            },
+                            leading: Icon(
+                              isSelected ? Icons.check_box : Icons.check_box_outline_blank,
+                              color: theme.primaryColor,
+                            ),
+                            title: Text(station.name),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+
+                  const Divider(),
+
+                  // Todas las estaciones Checkbox
+                  CheckboxListTile(
+                    title: const Text("Todas las estaciones", style: TextStyle(fontWeight: FontWeight.bold)),
+                    value: _isAllStationsChecked,
+                    activeColor: theme.primaryColor,
+                    onChanged: (val) {
+                      setState(() {
+                        _isAllStationsChecked = val ?? false;
+                        if (_isAllStationsChecked) {
+                          _selectedStations.clear();
+                          _expandEstaciones = false;
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 50),
           if (_isLoading)
             const Center(child: CircularProgressIndicator())
           else
-            OutlinedButton(
-              onPressed: _onGetDataPressed,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                side: const BorderSide(color: Colors.blue),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                gradient: LinearGradient(
+                  colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: theme.colorScheme.primary.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Text('OBTENER DATOS'),
+              child: ElevatedButton(
+                onPressed: _onGetDataPressed,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('OBTENER DATOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
             ),
         ],
       ),
