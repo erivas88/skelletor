@@ -29,8 +29,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   bool _isSaving = false;
   bool _isMonitoreoFallido = false;
   bool _isProcessingImage = false;
+  bool _isProcessingMulti = false;
+  bool _isProcessingTurb = false;
   DateTime? _fechaYHoraMuestreo; 
   String? _imagePath;
+  String? _fotoMultiparametroPath;
+  String? _fotoTurbiedadPath;
   final ImagePicker _picker = ImagePicker();
   final ScreenshotController _screenshotController = ScreenshotController();
 
@@ -186,6 +190,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       _oxigenoController.text = data['oxigeno']?.toString() ?? '';
       _turbiedadController.text = data['turbiedad']?.toString() ?? '';
       _imagePath = data['foto_path'];
+      _fotoMultiparametroPath = data['foto_multiparametro'];
+      _fotoTurbiedadPath = data['foto_turbiedad'];
     });
 
     // Special case: Load stations if program is selected
@@ -260,6 +266,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'cod_laboratorio': _codLabController.text,
         'usuario_id': inspectorId,
         'foto_path': _imagePath,
+        'foto_multiparametro': _fotoMultiparametroPath,
+        'foto_turbiedad': _fotoTurbiedadPath,
       };
 
       // 3. Persistence
@@ -277,7 +285,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        // Redirigir a la lista de monitoreos en lugar de hacer pop
         Navigator.pushReplacementNamed(context, '/monitoreos');
       }
     } catch (e) {
@@ -326,6 +333,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Equipo Multiparametro',
                 hintText: 'Seleccione equipo',
+                searchHintText: 'Buscar equipo...',
                 selectedValue: _equipoMultiparametroSeleccionado,
                 options: _equiposMultiOptions,
                 isDarkMode: isDarkMode,
@@ -336,6 +344,15 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController),
                 CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController),
                 CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController),
+                _buildEquipmentPhotoFullPreview(
+                  title: 'EVIDENCIA MULTIPARÁMETRO',
+                  path: _fotoMultiparametroPath,
+                  isProcessing: _isProcessingMulti,
+                  onTomarFoto: _tomarFotoMultiparametro,
+                  onClear: () => setState(() => _fotoMultiparametroPath = null),
+                  onVerificar: () => _sharePhoto(_fotoMultiparametroPath!),
+                  isDarkMode: isDarkMode,
+                ),
               ],
               const SizedBox(height: 8),
             ]),
@@ -345,13 +362,24 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Turbidimetro',
                 hintText: 'Seleccione equipo',
+                searchHintText: 'Buscar equipo...',
                 selectedValue: _turbidimetroSeleccionado,
                 options: _turbidimetrosOptions,
                 isDarkMode: isDarkMode,
                 onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
               ),
-              if (_turbidimetroSeleccionado != null)
+              if (_turbidimetroSeleccionado != null) ...[
                 CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController),
+                _buildEquipmentPhotoFullPreview(
+                  title: 'EVIDENCIA TURBIEDAD',
+                  path: _fotoTurbiedadPath,
+                  isProcessing: _isProcessingTurb,
+                  onTomarFoto: _tomarFotoTurbiedad,
+                  onClear: () => setState(() => _fotoTurbiedadPath = null),
+                  onVerificar: () => _sharePhoto(_fotoTurbiedadPath!),
+                  isDarkMode: isDarkMode,
+                ),
+              ],
               const SizedBox(height: 8),
             ]),
             
@@ -360,6 +388,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Método de Muestreo',
                 hintText: 'Seleccione método de muestreo',
+                searchHintText: 'Buscar método...',
                 selectedValue: _metodoSeleccionado?.metodo,
                 options: _metodos.map((m) => m.metodo).toList(),
                 isDarkMode: isDarkMode,
@@ -416,7 +445,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     );
   }
 
-  // --- MÉTODOS Y HELPERS OPTIMIZADOS ---
+  // --- MÉTODOS Y HELPERS ---
 
   Widget _buildFormularioDatosMonitoreo(bool isDarkMode) {
     return Container(
@@ -426,6 +455,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           SearchableDropdown(
             label: 'Programa',
             hintText: 'Seleccione programa',
+            searchHintText: 'Buscar programa...',
             selectedValue: _programaSeleccionado?.name,
             options: _programas.map((p) => p.name).toList(),
             isDarkMode: isDarkMode,
@@ -435,6 +465,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           SearchableDropdown(
             label: 'Punto de Control',
             hintText: 'Seleccione estación',
+            searchHintText: 'Buscar estación...',
             selectedValue: _estacionSeleccionada?.name,
             options: _estaciones.map((s) => s.name).toList(),
             isDarkMode: isDarkMode,
@@ -446,6 +477,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           SearchableDropdown(
             label: 'Inspector',
             hintText: 'Seleccione inspector',
+            searchHintText: 'Buscar inspector...',
             selectedValue: _inspectorSeleccionado,
             options: _inspectoresOptions,
             isDarkMode: isDarkMode,
@@ -455,6 +487,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           SearchableDropdown(
             label: 'Matriz de Aguas',
             hintText: 'Seleccione Tipo de Aguas',
+            searchHintText: 'Buscar tipo de agua...',
             selectedValue: _matrizSeleccionada?.nombreMatriz,
             options: _matrices.map((m) => m.nombreMatriz).toList(),
             isDarkMode: isDarkMode,
@@ -607,7 +640,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   ),
                   const SizedBox(width: 16),
                   TextButton.icon(
-                    onPressed: _sharePhoto,
+                    onPressed: () => _sharePhoto(_imagePath!),
                     icon: const Icon(Icons.share, color: Colors.green, size: 16),
                     label: const Text("VERIFICAR", style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
@@ -619,8 +652,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       );
     }
   }
-
-  // _buildPhotoSection is removed as it is replaced by _buildPhotoPreview
 
   Future<Position?> _getCurrentLocation() async {
     bool serviceEnabled;
@@ -661,8 +692,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     return await Geolocator.getCurrentPosition();
   }
 
-  Future<void> _pickImage(ImageSource source) async {
-    // Strictly follow hardware source
+  Future<void> _pickImage(ImageSource source, {String target = 'general'}) async {
     if (source != ImageSource.camera) return;
 
     try {
@@ -674,8 +704,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       if (pickerImage != null) {
         Position? position = await _getCurrentLocation();
         if (position != null) {
-          // Pass the file to the high-res processing method
-          await _processImageWithStamp(File(pickerImage.path), position);
+          await _processImageWithStamp(File(pickerImage.path), position, target: target);
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -693,9 +722,34 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     }
   }
 
+  Future<void> _tomarFotoMultiparametro() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    if (image != null) {
+      Position? position = await _getCurrentLocation();
+      if (position != null) {
+        await _processImageWithStamp(File(image.path), position, target: 'multi');
+      } else {
+        setState(() => _fotoMultiparametroPath = image.path);
+      }
+    }
+  }
 
-  Future<void> _processImageWithStamp(File imageFile, Position position) async {
-    setState(() => _isProcessingImage = true);
+  Future<void> _tomarFotoTurbiedad() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    if (image != null) {
+      Position? position = await _getCurrentLocation();
+      if (position != null) {
+        await _processImageWithStamp(File(image.path), position, target: 'turb');
+      } else {
+        setState(() => _fotoTurbiedadPath = image.path);
+      }
+    }
+  }
+
+  Future<void> _processImageWithStamp(File imageFile, Position position, {String target = 'general'}) async {
+    if (target == 'general') setState(() => _isProcessingImage = true);
+    else if (target == 'multi') setState(() => _isProcessingMulti = true);
+    else if (target == 'turb') setState(() => _isProcessingTurb = true);
 
     try {
       final String timestamp = _formatearFechaYHora(DateTime.now());
@@ -703,22 +757,19 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       final String lon = position.longitude.toStringAsFixed(6);
       final String estacion = (_estacionSeleccionada?.name ?? "PUNTO DE CONTROL NO ESPECIFICADO").toUpperCase();
 
-      // 1. HARDWARE-NATIVE DIMENSION HANDLING
       final Uint8List mainBytes = await imageFile.readAsBytes();
       final ui.Codec codec = await ui.instantiateImageCodec(mainBytes);
       final ui.FrameInfo frameInfo = await codec.getNextFrame();
       final double imgWidth = frameInfo.image.width.toDouble();
       final double imgHeight = frameInfo.image.height.toDouble();
 
-      // 2. ASSET PRE-LOADING (CRITICAL: Fixes red 'X' issue in captureFromWidget)
       final ByteData data = await rootBundle.load('assets/gp-blanco-centrado.png');
       final Uint8List logoBytes = data.buffer.asUint8List();
 
-      // STRICT PROPORTIONAL SCALING (MANDATORY REQUIREMENTS)
-      final double dynamicFontSize = imgWidth * 0.02; // Small & Professional 2%
-      final double bannerHeight = imgHeight * 0.12;   // Strictly 12% height limit
-      final double logoSize = imgWidth * 0.20;        // Logo at 20% of width
-      final double margin = imgWidth * 0.04;          // Proportional margin
+      final double dynamicFontSize = imgWidth * 0.02;
+      final double bannerHeight = imgHeight * 0.12;
+      final double logoSize = imgWidth * 0.20;
+      final double margin = imgWidth * 0.04;
 
       final stampWidget = Directionality(
         textDirection: TextDirection.ltr,
@@ -727,15 +778,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           height: imgHeight,
           child: Stack(
             children: [
-              // Original Image at Native Resolution
               Image.memory(
                 mainBytes,
                 width: imgWidth,
                 height: imgHeight,
                 fit: BoxFit.cover,
               ),
-
-              // --- LOGO TOP LEFT (Pre-loaded Memory Image) ---
               Positioned(
                 top: margin,
                 left: margin,
@@ -748,8 +796,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   ),
                 ),
               ),
-
-              // --- 3-LINE CENTERED METADATA BANNER ---
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -816,12 +862,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         ),
       );
 
-      // 3. PIXEL-PERFECT CAPTURE (Forced 1:1 Pixel Mapping)
       final Uint8List stampedBytes = await _screenshotController.captureFromWidget(
         stampWidget,
         delay: const Duration(milliseconds: 500),
         pixelRatio: 1.0, 
-        targetSize: Size(imgWidth, imgHeight), // Direct image pixel targeting
+        targetSize: Size(imgWidth, imgHeight),
       );
 
       final directory = await getApplicationDocumentsDirectory();
@@ -832,47 +877,171 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       await processedFile.writeAsBytes(stampedBytes);
 
       setState(() {
-        _imagePath = filePath;
+        if (target == 'general') _imagePath = filePath;
+        else if (target == 'multi') _fotoMultiparametroPath = filePath;
+        else if (target == 'turb') _fotoTurbiedadPath = filePath;
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error en puente técnico: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
-      debugPrint("STAMP ERROR: $e");
     } finally {
-      if (mounted) setState(() => _isProcessingImage = false);
+      if (mounted) {
+        setState(() {
+          _isProcessingImage = false;
+          _isProcessingMulti = false;
+          _isProcessingTurb = false;
+        });
+      }
     }
   }
 
   void _removeImage() {
-    setState(() {
-      _imagePath = null;
-    });
+    setState(() => _imagePath = null);
   }
 
-  Future<void> _sharePhoto() async {
-    if (_imagePath == null) return;
-    
+  Future<void> _sharePhoto(String path) async {
     try {
-      final XFile file = XFile(_imagePath!);
-      await Share.shareXFiles(
-        [file], 
-        text: 'EVIDENCIA MONITOREO - ${_estacionSeleccionada?.name ?? "PTO"}',
-      );
+      final XFile file = XFile(path);
+      await Share.shareXFiles([file], text: 'EVIDENCIA MONITOREO - ${_estacionSeleccionada?.name ?? "PTO"}');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al compartir: $e')),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
+  Widget _buildEquipmentPhotoFullPreview({
+    required String title,
+    required String? path,
+    required bool isProcessing,
+    required VoidCallback onTomarFoto,
+    required VoidCallback onClear,
+    required VoidCallback onVerificar,
+    required bool isDarkMode,
+  }) {
+    if (isProcessing) {
+      return Container(
+        height: 200,
+        margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[900] : Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(strokeWidth: 3, color: Colors.blueAccent),
+            const SizedBox(height: 20),
+            const Text(
+              "CALIBRANDO RESOLUCIÓN ORIGINAL...",
+              style: TextStyle(
+                color: Colors.blueAccent,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "ELIMINANDO DESBORDAMIENTOS",
+              style: TextStyle(
+                color: Colors.grey.withOpacity(0.6),
+                fontSize: 9,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (path == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: onTomarFoto,
+            icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+            label: const Text("CAPTURAR RESPALDO FOTOGRÁFICO", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(color: Colors.blueAccent, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1),
+            ),
+            const SizedBox(height: 12),
+            AspectRatio(
+              aspectRatio: 4 / 3,
+              child: Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12.0),
+                    child: Image.file(
+                      File(path),
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: GestureDetector(
+                      onTap: onClear,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Colors.black45,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: onTomarFoto,
+                    icon: const Icon(Icons.refresh, color: Colors.blueAccent, size: 16),
+                    label: const Text("RECAPTURAR", style: TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 16),
+                  TextButton.icon(
+                    onPressed: onVerificar,
+                    icon: const Icon(Icons.share, color: Colors.green, size: 16),
+                    label: const Text("VERIFICAR", style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
     }
   }
 
   void _showPickImageOptions() {
-    // This method is now obsolete but kept to avoid breaking changes if called elsewhere
-    // In strict mode, we only use camera.
     _pickImage(ImageSource.camera);
   }
 
@@ -932,19 +1101,20 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 }
 
-// ============================================================================
-// WIDGETS REUTILIZABLES (Adaptados para usar controladores)
-// ============================================================================
+// ===================================
+// TOP-LEVEL HELPER WIDGETS
+// ===================================
 
 class SearchableDropdown extends StatefulWidget {
   final String label;
   final String hintText;
+  final String? searchHintText;
   final String? selectedValue;
   final List<String> options;
   final ValueChanged<String> onChanged;
   final bool isDarkMode;
 
-  const SearchableDropdown({super.key, required this.label, required this.hintText, required this.selectedValue, required this.options, required this.onChanged, required this.isDarkMode});
+  const SearchableDropdown({super.key, required this.label, required this.hintText, this.searchHintText, required this.selectedValue, required this.options, required this.onChanged, required this.isDarkMode});
 
   @override
   State<SearchableDropdown> createState() => _SearchableDropdownState();
@@ -1004,7 +1174,7 @@ class _SearchableDropdownState extends State<SearchableDropdown> {
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Buscar...',
+                      hintText: widget.searchHintText ?? 'Buscar...',
                       hintStyle: TextStyle(color: widget.isDarkMode ? Colors.grey.shade400 : Colors.grey.shade600),
                       prefixIcon: Icon(Icons.search, size: 20, color: widget.isDarkMode ? Colors.white70 : Colors.grey.shade800),
                       isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 8.0),

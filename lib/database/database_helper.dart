@@ -119,6 +119,8 @@ class DatabaseHelper {
         cod_laboratorio TEXT,
         usuario_id INTEGER,
         foto_path TEXT,
+        foto_multiparametro TEXT,
+        foto_turbiedad TEXT,
         FOREIGN KEY (usuario_id) REFERENCES usuarios (id_usuario)
       )
     ''');
