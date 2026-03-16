@@ -25,12 +25,13 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<Map<String, dynamic>> _estacionesConPrograma = [];
   List<Map<String, dynamic>> _equipos = [];
   List<TipoEquipo> _tiposEquipo = [];
+  List<Parametro> _parametros = [];
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {
@@ -59,6 +60,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
       // Las líneas nuevas de los equipos
       final equipos = await _dbHelper.getAllEquiposWithTipo();
       final tiposEquipo = await _dbHelper.getTiposEquipo();
+      final parametros = await _dbHelper.getParametros();
 
       setState(() {
         _usuarios = usuarios;
@@ -68,6 +70,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         _estacionesConPrograma = estaciones;
         _equipos = equipos; // Asignamos equipos
         _tiposEquipo = tiposEquipo; // Asignamos tipos
+        _parametros = parametros;
         _isLoading = false;
       });
     } catch (e) {
@@ -111,6 +114,10 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     final TextEditingController c1 = TextEditingController();
     final TextEditingController c2 = TextEditingController();
     final TextEditingController c3 = TextEditingController(); // For lat/long or secondary values
+    final TextEditingController _claveController = TextEditingController();
+    final TextEditingController _unidadController = TextEditingController();
+    final TextEditingController _minController = TextEditingController();
+    final TextEditingController _maxController = TextEditingController();
     int? selectedProgramId;
     int? selectedTipoId;
 
@@ -132,6 +139,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
       } else if (type == 'Equipo') {
         c1.text = item['codigo'];
         selectedTipoId = item['id_form_fk'];
+      } else if (type == 'Parámetro') {
+        c1.text = (item as Parametro).nombreParametro;
+        _claveController.text = item.claveInterna;
+        _unidadController.text = item.unidad;
+        _minController.text = item.min?.toString() ?? '';
+        _maxController.text = item.max?.toString() ?? '';
       }
     }
 
@@ -173,6 +186,45 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                     items: _tiposEquipo.map((t) => DropdownMenuItem(value: t.idForm, child: Text(t.tipo))).toList(),
                     onChanged: (val) => setDialogState(() => selectedTipoId = val),
                   ),
+                ] else if (type == 'Parámetro') ...[
+                  TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre Parámetro')),
+                  const SizedBox(height: 8),
+                  Visibility(
+                    visible: !isEdit,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: _claveController,
+                          decoration: const InputDecoration(labelText: 'Clave Interna'),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                  TextField(controller: _unidadController, decoration: const InputDecoration(labelText: 'Unidad')),
+                  if (item == null || (item is Parametro && item.claveInterna.toLowerCase() == 'ph')) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _minController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Mínimo'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _maxController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Máximo'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -193,6 +245,13 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   if (c1.text.trim().isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Por favor, ingrese el nombre del registro.'), backgroundColor: Colors.redAccent),
+                    );
+                    return;
+                  }
+                } else if (type == 'Parámetro') {
+                  if (c1.text.trim().isEmpty || _claveController.text.trim().isEmpty || _unidadController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Por favor, rellene todos los campos (Nombre, Clave Interna y Unidad).'), backgroundColor: Colors.redAccent),
                     );
                     return;
                   }
@@ -225,6 +284,18 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       'id_form_fk': selectedTipoId ?? 0,
                     };
                     isEdit ? await _dbHelper.updateEquipo(e) : await _dbHelper.addEquipo(e);
+                  } else if (type == 'Parámetro') {
+                    final p = Parametro(
+                      idParametro: isEdit
+                          ? (item as Parametro).idParametro
+                          : DateTime.now().millisecondsSinceEpoch % 10000,
+                      nombreParametro: c1.text.trim(),
+                      claveInterna: _claveController.text.trim(),
+                      unidad: _unidadController.text.trim(),
+                      min: double.tryParse(_minController.text.trim()),
+                      max: double.tryParse(_maxController.text.trim()),
+                    );
+                    isEdit ? await _dbHelper.updateParametro(p) : await _dbHelper.addParametro(p);
                   }
                   if (mounted) Navigator.pop(context);
                   _loadAllData();
@@ -256,6 +327,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               else if (type == 'Programa') await _dbHelper.deleteProgram(id);
               else if (type == 'Estación') await _dbHelper.deleteStation(id);
               else if (type == 'Equipo') await _dbHelper.deleteEquipo(id);
+              else if (type == 'Parámetro') await _dbHelper.deleteParametro(id);
               if (mounted) Navigator.pop(context);
               _loadAllData();
             },
@@ -298,6 +370,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
             Tab(text: 'Programas'),
             Tab(text: 'Estaciones'),
             Tab(text: 'Equipos'),
+            Tab(text: 'Parámetros'),
           ],
         ),
       ),
@@ -313,11 +386,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                 _buildTabList(_programas, 'Programa'),
                 _buildStationsTab(),
                 _buildEquiposTab(),
+                _buildTabList(_parametros, 'Parámetro'),
               ],
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo'];
+          final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo', 'Parámetro'];
           _showFormDialog(type: types[_tabController.index]);
         },
         child: const Icon(Icons.add),
@@ -339,6 +413,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         searchField = item.nombreMatriz;
       } else if (type == 'Programa') {
         searchField = item.name;
+      } else if (type == 'Parámetro') {
+        searchField = item.nombreParametro;
       }
       return searchField.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
@@ -385,6 +461,10 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                 title = item.name;
                 subtitle = ''; // ID oculto por requerimiento
                 id = item.id;
+              } else if (type == 'Parámetro') {
+                title = item.nombreParametro;
+                subtitle = '';
+                id = item.idParametro;
               }
 
               return ListTile(
@@ -395,7 +475,9 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   children: [
                     IconButton(
                         icon: const Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () => _showFormDialog(item: item, type: type)),
+                        onPressed: () {
+                          _showFormDialog(item: item, type: type);
+                        }),
                     IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),
                         onPressed: () => _confirmDelete(id, type)),

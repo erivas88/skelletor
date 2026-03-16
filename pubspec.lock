@@ -320,6 +320,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.2"
+  intl:
+    dependency: "direct main"
+    description:
+      name: intl
+      sha256: d6f56758b7d3014a48af9701c085700aac781a92a87a62b1333b46d8879661cf
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.19.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -661,6 +669,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  syncfusion_flutter_charts:
+    dependency: "direct main"
+    description:
+      name: syncfusion_flutter_charts
+      sha256: a7b7be133602bcffd6d6c13020a2869f2f5d0232835b1a15164a5bb57aab3868
+      url: "https://pub.dev"
+    source: hosted
+    version: "32.2.9"
+  syncfusion_flutter_core:
+    dependency: transitive
+    description:
+      name: syncfusion_flutter_core
+      sha256: "7699e129fc48dfdbb6ad7f8396eaddf5b8f06c649c5bfabdeee5a73dbaca845c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "32.2.9"
   synchronized:
     dependency: transitive
     description:

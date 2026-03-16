@@ -104,15 +104,6 @@ class ExportarBDScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              Text(
-                'Archivo: collector.db',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDarkMode ? Colors.white38 : Colors.black26,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
             ],
           ),
         ),

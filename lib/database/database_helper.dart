@@ -140,6 +140,17 @@ class DatabaseHelper {
         estacion TEXT
       )
     ''');
+    
+    await db.execute('''
+      CREATE TABLE parametros (
+        id_parametro INTEGER PRIMARY KEY,
+        nombre_parametro TEXT,
+        clave_interna TEXT,
+        unidad TEXT,
+        min REAL,
+        max REAL
+      )
+    ''');
   }
 
   Future<void> syncData(Map<String, dynamic> allData) async {
@@ -239,6 +250,19 @@ class DatabaseHelper {
           }
         }
       }
+
+      // 6. Parámetros
+      if (allData.containsKey('parametros')) {
+        final List<dynamic> parametros = allData['parametros'] ?? [];
+        for (var json in parametros) {
+          final parametro = Parametro.fromJson(json);
+          await txn.insert(
+            'parametros',
+            parametro.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
     });
   }
 
@@ -299,6 +323,19 @@ class DatabaseHelper {
     return maps.map<TipoEquipo>((m) => TipoEquipo(
       idForm: m['id_form'],
       tipo: m['tipo'],
+    )).toList();
+  }
+
+  Future<List<Parametro>> getParametros() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('parametros');
+    return maps.map<Parametro>((m) => Parametro(
+      idParametro: m['id_parametro'],
+      nombreParametro: m['nombre_parametro'],
+      claveInterna: m['clave_interna'] ?? '',
+      unidad: m['unidad'] ?? '',
+      min: m['min'] != null ? double.tryParse(m['min'].toString()) : null,
+      max: m['max'] != null ? double.tryParse(m['max'].toString()) : null,
     )).toList();
   }
 
@@ -394,6 +431,20 @@ class DatabaseHelper {
     final db = await database;
     await db.delete('program_stations', where: 'station_id = ?', whereArgs: [id]);
     return await db.delete('stations', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // CRUD Operations - Parámetros
+  Future<int> addParametro(Parametro parametro) async {
+    final db = await database;
+    return await db.insert('parametros', parametro.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+  Future<int> updateParametro(Parametro parametro) async {
+    final db = await database;
+    return await db.update('parametros', parametro.toMap(), where: 'id_parametro = ?', whereArgs: [parametro.idParametro]);
+  }
+  Future<int> deleteParametro(int id) async {
+    final db = await database;
+    return await db.delete('parametros', where: 'id_parametro = ?', whereArgs: [id]);
   }
 
   // CRUD Operations - Equipos
@@ -517,6 +568,16 @@ class DatabaseHelper {
       'historial_muestras',
       where: 'estacion = ?',
       whereArgs: [stationName],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getHistorialMuestrasByStationName(String stationName) async {
+    final db = await database;
+    return await db.query(
+      'historial_muestras',
+      where: 'estacion = ?',
+      whereArgs: [stationName],
+      orderBy: 'fecha DESC', // Important to get data in order for charting
     );
   }
 }

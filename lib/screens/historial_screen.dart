@@ -101,8 +101,16 @@ class _HistorialScreenState extends State<HistorialScreen> {
       appBar: AppBar(
         title: const Text('Historial de Muestras'),
         actions: [
-          IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.delete_outline), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: () {},
+            color: isDarkMode ? Colors.white : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () {},
+            color: isDarkMode ? Colors.white : null,
+          ),
         ],
       ),
       drawer: const AppDrawer(currentRoute: '/historial'),
@@ -126,9 +134,19 @@ class _HistorialScreenState extends State<HistorialScreen> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _filterPoints,
+                style: TextStyle(
+                  color: isDarkMode ? Colors.white : Colors.black87,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Buscar punto de monitoreo...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
+                  hintStyle: TextStyle(
+                    color: isDarkMode ? Colors.grey.shade400 : Colors.grey,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 20,
+                    color: isDarkMode ? Colors.white : Colors.grey,
+                  ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 15),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(30),
@@ -197,9 +215,11 @@ class _HistorialScreenState extends State<HistorialScreen> {
                                   ),
                                   title: Text(
                                     stationName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      color: Color(0xFF212121), // Primary black
+                                      color: isDarkMode
+                                          ? Colors.white
+                                          : const Color(0xFF212121),
                                       fontSize: 16,
                                     ),
                                   ),
@@ -211,14 +231,20 @@ class _HistorialScreenState extends State<HistorialScreen> {
                                       Text(
                                         'Última sincronización',
                                         style: TextStyle(
-                                            fontSize: 11,
-                                            color: theme.hintColor),
+                                          fontSize: 11,
+                                          color: isDarkMode
+                                              ? Colors.grey.shade400
+                                              : theme.hintColor,
+                                        ),
                                       ),
                                       Text(
                                         point['last_sync_date'],
-                                        style: const TextStyle(
-                                            fontSize: 13,
-                                            color: Color(0xFF757575)),
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: isDarkMode
+                                              ? Colors.grey.shade300
+                                              : const Color(0xFF757575),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -231,13 +257,19 @@ class _HistorialScreenState extends State<HistorialScreen> {
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 18,
-                                          color: theme.primaryColor,
+                                          color: isDarkMode
+                                              ? Colors.blueAccent
+                                              : theme.primaryColor,
                                         ),
                                       ),
-                                      const Text(
+                                      Text(
                                         'muestras',
                                         style: TextStyle(
-                                            fontSize: 10, color: Colors.grey),
+                                          fontSize: 10,
+                                          color: isDarkMode
+                                              ? Colors.blueAccent.withOpacity(0.8)
+                                              : Colors.grey,
+                                        ),
                                       ),
                                     ],
                                   ),

@@ -12,6 +12,7 @@ import '../widgets/app_drawer.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
 import 'package:flutter/services.dart';
+import 'dart:math';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
   final int? registroId;
@@ -66,9 +67,49 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   final TextEditingController _turbiedadController = TextEditingController();
   final TextEditingController _codLabController = TextEditingController();
   final TextEditingController _obsController = TextEditingController();
+  final TextEditingController _profundidadController = TextEditingController();
+  final TextEditingController _nivelTerrenoController = TextEditingController();
+  String? _equipoNivelSeleccionado;
+  String? _tipoNivelPozoSeleccionado;
+  DateTime? _fechaYHoraNivel;
+  
+  // STATISTICAL VALIDATION
+  bool _hasHistory = false;
+  Map<String, Map<String, double?>> _parameterRanges = {};
 
   bool? _muestreoHidroquimico; 
   bool? _muestreoIsotopico;
+
+  // --- VALIDATION GETTERS ---
+  bool get _isDatosMonitoreoComplete {
+    if (_isMonitoreoFallido) return _obsController.text.isNotEmpty;
+    return _programaSeleccionado != null &&
+        _estacionSeleccionada != null &&
+        _inspectorSeleccionado != null &&
+        _matrizSeleccionada != null &&
+        _fechaYHoraMuestreo != null &&
+        _imagePath != null;
+  }
+
+  bool get _isMultiparametroComplete {
+    if (_equipoMultiparametroSeleccionado == null) return false;
+    return _tempController.text.isNotEmpty &&
+        _phController.text.isNotEmpty &&
+        _condController.text.isNotEmpty &&
+        _oxigenoController.text.isNotEmpty &&
+        _fotoMultiparametroPath != null;
+  }
+
+  bool get _isTurbiedadComplete {
+    if (_turbidimetroSeleccionado == null) return false;
+    return _turbiedadController.text.isNotEmpty && _fotoTurbiedadPath != null;
+  }
+
+  bool get _isMuestreoComplete {
+    return _metodoSeleccionado != null &&
+        _muestreoHidroquimico != null &&
+        _muestreoIsotopico != null;
+  }
 
   @override
   void initState() {
@@ -85,6 +126,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     _turbiedadController.dispose();
     _codLabController.dispose();
     _obsController.dispose();
+    _profundidadController.dispose();
+    _nivelTerrenoController.dispose();
     super.dispose();
   }
 
@@ -224,6 +267,77 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     }
   }
 
+  Future<void> _onStationChanged(String name) async {
+    final station = _estaciones.firstWhere((s) => s.name == name);
+    setState(() {
+      _estacionSeleccionada = station;
+    });
+
+    await _updateHistoricalRanges(station.name);
+  }
+
+  Future<void> _updateHistoricalRanges(String stationName) async {
+    try {
+      final history = await _dbHelper.getHistorialMuestrasByStationName(stationName);
+      
+      if (history.isEmpty) {
+        setState(() {
+          _hasHistory = false;
+          _parameterRanges = {};
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sin registros históricos para este punto de control'))
+          );
+        }
+        return;
+      }
+
+      final Map<String, List<double>> values = {
+        'ph': [], 'temp': [], 'cond': [], 'oxigeno': [], 'nivel': [], 'turbiedad': []
+      };
+
+      for (var row in history) {
+        if (row['ph'] != null) values['ph']!.add(row['ph']);
+        if (row['temperatura'] != null) values['temp']!.add(row['temperatura']);
+        if (row['conductividad'] != null) values['cond']!.add(row['conductividad']);
+        if (row['oxigeno'] != null) values['oxigeno']!.add(row['oxigeno']);
+        if (row['nivel'] != null) values['nivel']!.add(row['nivel']);
+        // Note: 'turbiedad' is not in historical_muestras schema yet, 
+        // using 'SDT' as fallback or empty if specific mapping needed later
+        if (row['SDT'] != null) values['turbiedad']!.add(row['SDT']); 
+      }
+
+      final Map<String, Map<String, double?>> ranges = {};
+      values.forEach((key, list) {
+        ranges[key] = _calculateThreeSigmaRange(list);
+      });
+
+      setState(() {
+        _hasHistory = true;
+        _parameterRanges = ranges;
+      });
+    } catch (e) {
+      debugPrint('Error calculating ranges: $e');
+    }
+  }
+
+  Map<String, double?> _calculateThreeSigmaRange(List<double> data) {
+    if (data.isEmpty) return {'min': null, 'max': null};
+    
+    // Mean
+    double mean = data.reduce((a, b) => a + b) / data.length;
+    
+    // StdDev
+    double variance = data.map((x) => pow(x - mean, 2)).reduce((a, b) => a + b) / data.length;
+    double sigma = sqrt(variance);
+
+    return {
+      'min': mean - (3 * sigma),
+      'max': mean + (3 * sigma),
+    };
+  }
+
   Future<void> _guardarMonitoreo() async {
     // 1. Validation
     if (_programaSeleccionado == null || _estacionSeleccionada == null) {
@@ -316,20 +430,82 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           if (_isMonitoreoFallido) ...[
             Container(
               color: const Color(0xFFFF4B61), 
-              child: const ListTile(
-                leading: Icon(Icons.assignment_outlined, size: 28, color: Colors.white),
-                title: Text('Datos de Monitoreo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.white)),
+              child: ListTile(
+                leading: const Icon(Icons.assignment_outlined, size: 28, color: Colors.white),
+                title: const Text('Datos de Monitoreo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.white)),
               ),
             ),
             _buildFormularioDatosMonitoreo(isDarkMode),
           ] else
-            _buildSectionTile('Datos de Monitoreo', isDarkMode, [_buildFormularioDatosMonitoreo(isDarkMode)]),
+            _buildSectionTile(
+              'Datos de Monitoreo',
+              isDarkMode,
+              _isDatosMonitoreoComplete,
+              [_buildFormularioDatosMonitoreo(isDarkMode)],
+            ),
+
+          // --- SECCIÓN 1.5: NIVEL FREÁTICO (Condicional) ---
+          if (_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)
+            _buildSectionTile(
+              'Nivel Freático',
+              isDarkMode,
+              _equipoNivelSeleccionado != null && _tipoNivelPozoSeleccionado != null && _nivelTerrenoController.text.isNotEmpty && _fechaYHoraNivel != null,
+              [
+                SearchableDropdown(
+                  label: 'Equipo Nivel',
+                  hintText: 'Seleccione equipo de nivel',
+                  searchHintText: 'Buscar equipo...',
+                  selectedValue: _equipoNivelSeleccionado,
+                  options: _equiposMultiOptions,
+                  isDarkMode: isDarkMode,
+                  onChanged: (val) => setState(() => _equipoNivelSeleccionado = val),
+                ),
+                SearchableDropdown(
+                  label: 'Tipo / Nivel Pozo',
+                  hintText: 'Seleccione tipo de pozo',
+                  searchHintText: 'Buscar tipo...',
+                  selectedValue: _tipoNivelPozoSeleccionado,
+                  options: const ['Pozo Monitoreo', 'Pozo Producción', 'Cisterna', 'Otro'],
+                  isDarkMode: isDarkMode,
+                  onChanged: (val) => setState(() => _tipoNivelPozoSeleccionado = val),
+                ),
+                CustomParametroInputRow(
+                  label: 'Nivel Terreno [m.bnb]',
+                  hintText: 'Ingrese nivel terreno',
+                  isDarkMode: isDarkMode,
+                  controller: _nivelTerrenoController,
+                  hasHistory: _hasHistory,
+                  minAllowed: _parameterRanges['nivel']?['min'],
+                  maxAllowed: _parameterRanges['nivel']?['max'],
+                ),
+                CustomFormRow(
+                  label: 'Hora Medición - Nivel',
+                  value: _fechaYHoraNivel == null ? 'Seleccione Hora y Fecha' : _formatearFechaYHora(_fechaYHoraNivel!),
+                  isValid: _fechaYHoraNivel != null,
+                  showArrow: false,
+                  isDarkMode: isDarkMode,
+                  onTap: () async {
+                    final DateTime? fecha = await showDatePicker(
+                      context: context, initialDate: _fechaYHoraNivel ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100)
+                    );
+                    if (!mounted || fecha == null) return;
+                    final TimeOfDay? hora = await showTimePicker(
+                      context: context, initialTime: _fechaYHoraNivel != null ? TimeOfDay.fromDateTime(_fechaYHoraNivel!) : TimeOfDay.now()
+                    );
+                    if (!mounted || hora == null) return;
+                    setState(() => _fechaYHoraNivel = DateTime(fecha.year, fecha.month, fecha.day, hora.hour, hora.minute));
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+              leadingIcon: Icons.water_drop,
+            ),
 
           // --- SECCIONES INFERIORES (Se ocultan si falla el monitoreo) ---
           if (!_isMonitoreoFallido) ...[
             
             // --- SECCIÓN 2: MULTIPARÁMETRO ---
-            _buildSectionTile('Multiparámetro', isDarkMode, [
+            _buildSectionTile('Multiparámetro', isDarkMode, _isMultiparametroComplete, [
               SearchableDropdown(
                 label: 'Equipo Multiparametro',
                 hintText: 'Seleccione equipo',
@@ -340,10 +516,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
               ),
               if (_equipoMultiparametroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController),
-                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController),
-                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController),
-                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController),
+                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, hasHistory: _hasHistory, minAllowed: _parameterRanges['temp']?['min'], maxAllowed: _parameterRanges['temp']?['max']),
+                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max']),
+                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, hasHistory: _hasHistory, minAllowed: _parameterRanges['cond']?['min'], maxAllowed: _parameterRanges['cond']?['max']),
+                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max']),
                 _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA MULTIPARÁMETRO',
                   path: _fotoMultiparametroPath,
@@ -358,7 +534,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             ]),
 
             // --- SECCIÓN 3: TURBIEDAD ---
-            _buildSectionTile('Turbiedad', isDarkMode, [
+            _buildSectionTile('Turbiedad', isDarkMode, _isTurbiedadComplete, [
               SearchableDropdown(
                 label: 'Turbidimetro',
                 hintText: 'Seleccione equipo',
@@ -369,7 +545,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
               ),
               if (_turbidimetroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController),
+                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController, hasHistory: _hasHistory, minAllowed: _parameterRanges['turbiedad']?['min'], maxAllowed: _parameterRanges['turbiedad']?['max']),
                 _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA TURBIEDAD',
                   path: _fotoTurbiedadPath,
@@ -384,7 +560,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             ]),
             
             // --- SECCIÓN 4: MUESTREO ---
-            _buildSectionTile('Muestreo', isDarkMode, [
+            _buildSectionTile('Muestreo', isDarkMode, _isMuestreoComplete, [
               SearchableDropdown(
                 label: 'Método de Muestreo',
                 hintText: 'Seleccione método de muestreo',
@@ -416,8 +592,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   if (mounted && result != null) setState(() => _muestreoIsotopico = result);
                 }
               ),
-              CustomTextInputRow(label: 'Código Laboratorio', hintText: 'Ingrese código de laboratorio', isDarkMode: isDarkMode, controller: _codLabController),
-              CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController),
+              CustomTextInputRow(label: 'Código Laboratorio', hintText: 'Ingrese código de laboratorio', isDarkMode: isDarkMode, controller: _codLabController, isMandatory: false),
+              const SizedBox(height: 16),
+              CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController, isMandatory: false, showLeadingIcon: false),
               const SizedBox(height: 8),
             ]),
             const SizedBox(height: 16),
@@ -469,9 +646,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             selectedValue: _estacionSeleccionada?.name,
             options: _estaciones.map((s) => s.name).toList(),
             isDarkMode: isDarkMode,
-            onChanged: (val) {
-              setState(() => _estacionSeleccionada = _estaciones.firstWhere((s) => s.name == val));
-            },
+            onChanged: _onStationChanged,
           ),
           
           SearchableDropdown(
@@ -505,6 +680,22 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             onTap: _seleccionarFechaYHora, 
           ),
           
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: CustomParametroInputRow(
+              label: 'Profundidad de muestreo [m]', 
+              hintText: 'Ingrese profundidad', 
+              isDarkMode: isDarkMode, 
+              controller: _profundidadController,
+              showLeadingIcon: true,
+              showPulseIcon: false,
+              isMandatory: true,
+              hasHistory: _hasHistory,
+              minAllowed: _parameterRanges['nivel']?['min'],
+              maxAllowed: _parameterRanges['nivel']?['max'],
+            ),
+          ),
+          
           CustomFormRow(
             label: 'Monitoreo Fallido',
             value: _isMonitoreoFallido ? 'SI' : 'NO',
@@ -519,7 +710,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           ),
 
           if (_isMonitoreoFallido)
-            CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController),
+            CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController, isMandatory: false, showLeadingIcon: false),
           
           _buildPhotoPreview(isDarkMode),
           
@@ -1045,13 +1236,43 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     _pickImage(ImageSource.camera);
   }
 
-  Widget _buildSectionTile(String title, bool isDarkMode, List<Widget> children) {
+  Widget _buildSectionTile(String title, bool isDarkMode, bool isComplete, List<Widget> children, {IconData leadingIcon = Icons.assignment_outlined}) {
     return ExpansionTile(
       initiallyExpanded: true,
       iconColor: Colors.blueAccent,
       collapsedIconColor: Colors.blueAccent,
-      leading: const Icon(Icons.assignment_outlined, size: 28, color: Colors.blueAccent),
-      title: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Theme.of(context).colorScheme.onSurface)),
+      leading: SizedBox(
+        width: 48, 
+        child: Align(
+          alignment: Alignment.centerLeft, 
+          child: Icon(leadingIcon, size: 28, color: Colors.blueAccent)
+        ),
+      ),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isComplete) ...[
+            const SizedBox(width: 8),
+            const Icon(Icons.check_circle, color: Colors.green, size: 20),
+          ],
+        ],
+      ),
       children: [
         Container(
           color: Theme.of(context).scaffoldBackgroundColor,
@@ -1113,8 +1334,23 @@ class SearchableDropdown extends StatefulWidget {
   final List<String> options;
   final ValueChanged<String> onChanged;
   final bool isDarkMode;
+  final IconData? customIcon;
+  final Color? customIconColor;
+  final bool showArrow;
 
-  const SearchableDropdown({super.key, required this.label, required this.hintText, this.searchHintText, required this.selectedValue, required this.options, required this.onChanged, required this.isDarkMode});
+  const SearchableDropdown({
+    super.key,
+    required this.label,
+    required this.hintText,
+    this.searchHintText,
+    required this.selectedValue,
+    required this.options,
+    required this.onChanged,
+    required this.isDarkMode,
+    this.customIcon,
+    this.customIconColor,
+    this.showArrow = true,
+  });
 
   @override
   State<SearchableDropdown> createState() => _SearchableDropdownState();
@@ -1157,6 +1393,9 @@ class _SearchableDropdownState extends State<SearchableDropdown> {
           value: widget.selectedValue ?? widget.hintText,
           isValid: widget.selectedValue != null,
           isDarkMode: widget.isDarkMode,
+          customIcon: widget.customIcon,
+          customIconColor: widget.customIconColor,
+          showArrow: widget.showArrow,
           onTap: () {
             setState(() {
               _isExpanded = !_isExpanded;
@@ -1226,7 +1465,14 @@ class CustomFormRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorGris = isDarkMode ? Colors.grey.shade400 : Colors.black54;
     return ListTile(
-      leading: Icon(customIcon ?? (isValid ? Icons.check_circle : Icons.cancel), color: customIconColor ?? (isValid ? Colors.greenAccent : Colors.grey.withValues(alpha: 0.5)), size: 24),
+      leading: SizedBox(
+        width: 32,
+        child: Icon(
+          customIcon ?? (isValid ? Icons.check_circle : Icons.cancel), 
+          color: customIconColor ?? (isValid ? Colors.greenAccent : (isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400)), 
+          size: 22
+        ),
+      ),
       title: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
       subtitle: Text(value, style: TextStyle(fontSize: 16, color: (isValid || customIcon != null) ? Theme.of(context).colorScheme.onSurface : colorGris)),
       trailing: showArrow ? Icon(Icons.arrow_drop_down, color: colorGris) : null,
@@ -1236,34 +1482,149 @@ class CustomFormRow extends StatelessWidget {
   }
 }
 
-class CustomParametroInputRow extends StatelessWidget {
-  final String label, hintText;
+class CustomParametroInputRow extends StatefulWidget {
+  final String label;
+  final String hintText;
   final bool isDarkMode;
   final TextEditingController controller;
+  final bool showPulseIcon;
+  final bool showLeadingIcon;
+  final bool isMandatory;
+  final double? minAllowed;
+  final double? maxAllowed;
+  final bool hasHistory;
 
-  const CustomParametroInputRow({super.key, required this.label, required this.hintText, required this.isDarkMode, required this.controller});
+  const CustomParametroInputRow({
+    super.key,
+    required this.label,
+    required this.hintText,
+    required this.isDarkMode,
+    required this.controller,
+    this.showPulseIcon = true,
+    this.showLeadingIcon = true,
+    this.isMandatory = true,
+    this.minAllowed,
+    this.maxAllowed,
+    this.hasHistory = false,
+  });
+
+  @override
+  State<CustomParametroInputRow> createState() => _CustomParametroInputRowState();
+}
+
+class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
+  bool _isValidated = false;
+  bool _isOutOfRange = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_validate);
+    _validate();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_validate);
+    super.dispose();
+  }
+
+  void _validate() {
+    if (!widget.hasHistory || widget.controller.text.isEmpty) {
+      if (_isValidated || _isOutOfRange) {
+        setState(() {
+          _isValidated = false;
+          _isOutOfRange = false;
+        });
+      }
+      return;
+    }
+
+    final double? val = double.tryParse(widget.controller.text);
+    if (val != null && widget.minAllowed != null && widget.maxAllowed != null) {
+      final bool outside = val < widget.minAllowed! || val > widget.maxAllowed!;
+      final bool valid = !outside;
+      
+      if (_isValidated != valid || _isOutOfRange != outside) {
+        setState(() {
+          _isValidated = valid;
+          _isOutOfRange = outside;
+        });
+      }
+    } else {
+      if (_isValidated || _isOutOfRange) {
+        setState(() {
+          _isValidated = false;
+          _isOutOfRange = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: const Icon(Icons.chevron_right, color: Colors.blueAccent, size: 24),
-      title: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
-      subtitle: TextField(
-        controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true), 
-        style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface),
-        decoration: InputDecoration(hintText: hintText, hintStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.black54, fontSize: 16), border: InputBorder.none, isDense: true, contentPadding: const EdgeInsets.only(top: 4.0)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0),
+      dense: true,
+      leading: SizedBox(
+        width: 32,
+        child: widget.showLeadingIcon 
+            ? Icon(
+                _isValidated ? Icons.check_circle : (_isOutOfRange ? Icons.error : Icons.cancel), 
+                color: _isValidated ? Colors.greenAccent : (_isOutOfRange ? Colors.redAccent : (widget.isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400)), 
+                size: 22
+              )
+            : null,
       ),
-      trailing: InkWell(
-        onTap: () => debugPrint('Botón presionado: $label'),
-        borderRadius: BorderRadius.circular(6.0),
-        child: Container(
-          decoration: BoxDecoration(border: Border.all(color: Colors.blueAccent, width: 1.5), borderRadius: BorderRadius.circular(6.0)),
-          padding: const EdgeInsets.all(4.0),
-          child: const Icon(Icons.monitor_heart_outlined, color: Colors.blueAccent, size: 20),
-        ),
+      title: Text(widget.label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: widget.controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: TextStyle(fontSize: 16, color: widget.isDarkMode ? Colors.white : Colors.black87),
+            decoration: InputDecoration(
+              hintText: widget.hintText,
+              hintStyle: TextStyle(
+                color: widget.isDarkMode ? Colors.grey.shade400 : Colors.black54, 
+                fontSize: 16
+              ),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.only(top: 4.0),
+            ),
+          ),
+          if (_isOutOfRange)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4.0),
+              child: Text(
+                'Fuera de rango histórico (3σ)',
+                style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ),
+        ],
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0), dense: true,
+      trailing: widget.showPulseIcon 
+          ? Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: GestureDetector(
+                onTap: () => debugPrint('Botón presionado: ${widget.label}'),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.blueAccent, width: 1.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.monitor_heart_outlined, 
+                    color: Colors.blueAccent, 
+                    size: 22
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
   }
 }
@@ -1273,13 +1634,41 @@ class CustomTextInputRow extends StatelessWidget {
   final bool isDarkMode;
   final int? maxLines;
   final TextEditingController controller;
+  final bool isMandatory;
+  final bool showLeadingIcon;
 
-  const CustomTextInputRow({super.key, required this.label, required this.hintText, required this.isDarkMode, this.maxLines = 1, required this.controller});
+  const CustomTextInputRow({
+    super.key, 
+    required this.label, 
+    required this.hintText, 
+    required this.isDarkMode, 
+    this.maxLines = 1, 
+    required this.controller,
+    this.isMandatory = true,
+    this.showLeadingIcon = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(Icons.cancel, color: Colors.grey.withValues(alpha: 0.5), size: 24),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0),
+      dense: true,
+      leading: SizedBox(
+        width: 32,
+        child: showLeadingIcon 
+            ? ListenableBuilder(
+                listenable: controller,
+                builder: (context, _) {
+                  final bool isCompleted = isMandatory && controller.text.isNotEmpty;
+                  return Icon(
+                    isCompleted ? Icons.check_circle : Icons.cancel, 
+                    color: isCompleted ? Colors.greenAccent : (isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400), 
+                    size: 22
+                  );
+                },
+              )
+            : null,
+      ),
       title: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
       subtitle: TextField(
         controller: controller,
@@ -1287,7 +1676,6 @@ class CustomTextInputRow extends StatelessWidget {
         style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface),
         decoration: InputDecoration(hintText: hintText, hintStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.black54, fontSize: 16), border: InputBorder.none, isDense: true, contentPadding: const EdgeInsets.only(top: 4.0)),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0), dense: true,
     );
   }
 }

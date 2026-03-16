@@ -8,7 +8,7 @@ class ApiService {
   Future<Map<String, dynamic>> fetchAllData() async {
     final String basicAuth = 'Basic ${base64Encode(utf8.encode(_auth))}';
 
-    final endpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos'];
+    final endpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros'];
     
     final Map<String, dynamic> allResults = {};
 

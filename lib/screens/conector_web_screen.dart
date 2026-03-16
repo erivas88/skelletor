@@ -301,7 +301,7 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
                     ),
                     trailing: Icon(
                       _expandPrograma ? Icons.expand_less : Icons.expand_more,
-                      color: theme.primaryColor,
+                      color: isDarkMode ? Colors.white70 : Colors.blueAccent,
                     ),
                     onTap: () => setState(() => _expandPrograma = !_expandPrograma),
                   ),
@@ -348,7 +348,7 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
                     ),
                     trailing: Icon(
                       _expandEstaciones ? Icons.expand_less : Icons.expand_more,
-                      color: theme.primaryColor,
+                      color: isDarkMode ? Colors.white70 : Colors.blueAccent,
                     ),
                     onTap: _selectedProgram == null || _isAllStationsChecked
                         ? null

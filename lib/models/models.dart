@@ -228,3 +228,48 @@ class EquipoDetalle {
   @override
   int get hashCode => id.hashCode;
 }
+
+class Parametro {
+  final int? idParametro;
+  final String nombreParametro;
+  final String claveInterna;
+  final String unidad;
+  final double? min;
+  final double? max;
+
+  Parametro({
+    this.idParametro,
+    required this.nombreParametro,
+    required this.claveInterna,
+    required this.unidad,
+    this.min,
+    this.max,
+  });
+
+  factory Parametro.fromJson(Map<String, dynamic> json) => Parametro(
+        idParametro: json['id_parametro'] ?? json['id'],
+        nombreParametro:
+            json['nombre_parametro'] ?? json['nombre'] ?? json['parametro'] ?? '',
+        claveInterna: json['clave_interna'] ?? '',
+        unidad: json['unidad'] ?? '',
+        min: json['min'] != null ? double.tryParse(json['min'].toString()) : null,
+        max: json['max'] != null ? double.tryParse(json['max'].toString()) : null,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id_parametro': idParametro,
+        'nombre_parametro': nombreParametro,
+        'clave_interna': claveInterna,
+        'unidad': unidad,
+        'min': min,
+        'max': max,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Parametro && other.idParametro == idParametro);
+
+  @override
+  int get hashCode => idParametro.hashCode;
+}
