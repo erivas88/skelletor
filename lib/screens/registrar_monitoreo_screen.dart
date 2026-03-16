@@ -13,6 +13,7 @@ import '../database/database_helper.dart';
 import '../models/models.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
+import 'dart:async';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
   final int? registroId;
@@ -29,6 +30,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isMonitoreoFallido = false;
+  int? _currentRegistroId;
+  Timer? _debounce;
   bool _isProcessingImage = false;
   bool _isProcessingMulti = false;
   bool _isProcessingTurb = false;
@@ -114,11 +117,81 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   @override
   void initState() {
     super.initState();
+    _currentRegistroId = widget.registroId;
     _loadDropdownData();
+    
+    // Add listeners for auto-save
+    _tempController.addListener(_onFieldChanged);
+    _phController.addListener(_onFieldChanged);
+    _condController.addListener(_onFieldChanged);
+    _oxigenoController.addListener(_onFieldChanged);
+    _turbiedadController.addListener(_onFieldChanged);
+    _codLabController.addListener(_onFieldChanged);
+    _obsController.addListener(_onFieldChanged);
+    _profundidadController.addListener(_onFieldChanged);
+    _nivelTerrenoController.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(seconds: 2), () {
+      _saveAsDraft();
+    });
+  }
+
+  Future<void> _saveAsDraft() async {
+    // Only save as draft if at least some basic info is selected
+    if (_programaSeleccionado == null && _estacionSeleccionada == null) return;
+
+    // Find Inspector ID
+    int? inspectorId;
+    if (_inspectorSeleccionado != null) {
+      final usuarios = await _dbHelper.getUsuarios();
+      try {
+        final inspector = usuarios.firstWhere((u) => '${u.nombre} ${u.apellido}' == _inspectorSeleccionado);
+        inspectorId = inspector.idUsuario;
+      } catch (_) {}
+    }
+
+    final Map<String, dynamic> data = {
+      'programa_id': _programaSeleccionado?.id,
+      'estacion_id': _estacionSeleccionada?.id,
+      'fecha_hora': _fechaYHoraMuestreo?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
+      'observacion': _obsController.text,
+      'matriz_id': _matrizSeleccionada?.idMatriz,
+      'equipo_multi_id': _equiposMulti.firstWhere((e) => e['codigo'] == _equipoMultiparametroSeleccionado, orElse: () => {'id': null})['id'],
+      'temp': double.tryParse(_tempController.text),
+      'ph': double.tryParse(_phController.text),
+      'conductividad': double.tryParse(_condController.text),
+      'oxigeno': double.tryParse(_oxigenoController.text),
+      'turbidimetro_id': _turbidimetros.firstWhere((e) => e['codigo'] == _turbidimetroSeleccionado, orElse: () => {'id': null})['id'],
+      'turbiedad': double.tryParse(_turbiedadController.text),
+      'metodo_id': _metodoSeleccionado?.idMetodo,
+      'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
+      'isotopico': _muestreoIsotopico == true ? 1 : 0,
+      'cod_laboratorio': _codLabController.text,
+      'usuario_id': inspectorId,
+      'foto_path': _imagePath,
+      'foto_multiparametro': _fotoMultiparametroPath,
+      'foto_turbiedad': _fotoTurbiedadPath,
+      'is_draft': 1,
+      'last_modified': DateTime.now().toIso8601String(),
+    };
+
+    if (_currentRegistroId == null) {
+      final id = await _dbHelper.addRegistroMonitoreo(data);
+      setState(() => _currentRegistroId = id);
+    } else {
+      await _dbHelper.updateRegistroMonitoreo(_currentRegistroId!, data);
+    }
+    
+    debugPrint('Borrador auto-guardado id: $_currentRegistroId');
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _tempController.dispose();
     _phController.dispose();
     _condController.dispose();
@@ -246,6 +319,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           _estacionSeleccionada = _estaciones.firstWhere((s) => s.id == data['estacion_id']);
         } catch (_) {}
       });
+
+      // TRIGGER: Fetch 3 Sigma ranges for the loaded station
+      if (_estacionSeleccionada != null) {
+        await _updateHistoricalRanges(_estacionSeleccionada!.name);
+      }
     }
   }
 
@@ -385,8 +463,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       };
 
       // 3. Persistence
-      if (widget.registroId != null) {
-        await _dbHelper.updateRegistroMonitoreo(widget.registroId!, registro);
+      registro['is_draft'] = 0;
+      registro['last_modified'] = DateTime.now().toIso8601String();
+
+      if (_currentRegistroId != null) {
+        await _dbHelper.updateRegistroMonitoreo(_currentRegistroId!, registro);
       } else {
         await _dbHelper.addRegistroMonitoreo(registro);
       }
@@ -1521,6 +1602,16 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
     super.initState();
     widget.controller.addListener(_validate);
     _validate();
+  }
+
+  @override
+  void didUpdateWidget(CustomParametroInputRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.minAllowed != widget.minAllowed || 
+        oldWidget.maxAllowed != widget.maxAllowed || 
+        oldWidget.hasHistory != widget.hasHistory) {
+      _validate();
+    }
   }
 
   @override

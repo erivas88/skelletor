@@ -20,7 +20,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'collector.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -29,6 +29,10 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE registros_monitoreo ADD COLUMN foto_path TEXT');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE registros_monitoreo ADD COLUMN is_draft INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE registros_monitoreo ADD COLUMN last_modified TEXT');
     }
   }
 
@@ -121,6 +125,8 @@ class DatabaseHelper {
         foto_path TEXT,
         foto_multiparametro TEXT,
         foto_turbiedad TEXT,
+        is_draft INTEGER DEFAULT 0,
+        last_modified TEXT,
         FOREIGN KEY (usuario_id) REFERENCES usuarios (id_usuario)
       )
     ''');
@@ -481,7 +487,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getMonitoreosList() async {
     final db = await database;
     return await db.rawQuery('''
-      SELECT rm.id, rm.fecha_hora, rm.monitoreo_fallido, s.name as estacion_name 
+      SELECT rm.id, rm.fecha_hora, rm.monitoreo_fallido, rm.is_draft, s.name as estacion_name 
       FROM registros_monitoreo rm
       LEFT JOIN stations s ON rm.estacion_id = s.id
       ORDER BY rm.fecha_hora DESC

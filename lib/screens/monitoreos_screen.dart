@@ -206,31 +206,50 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                     child: const Icon(Icons.location_on,
                                         color: Colors.blueAccent),
                                   ),
-                                  title: Text(
-                                      item['estacion_name'] ?? 'Sin Estación',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16)),
+                                  title: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          item['estacion_name'] ?? 'Sin Estación',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (item['is_draft'] == 1) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange.withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Text(
+                                            'BORRADOR',
+                                            style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                   subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       const SizedBox(height: 4),
                                       Text(
                                         _formatDate(item['fecha_hora'] ?? ''),
-                                        style: TextStyle(
-                                            color: colorGris, fontSize: 13),
+                                        style: TextStyle(color: colorGris, fontSize: 13),
                                       ),
                                     ],
                                   ),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const Icon(Icons.done_all,
-                                          color: Colors.green, size: 18),
+                                      if (item['is_draft'] == 1)
+                                        const Icon(Icons.edit_note, color: Colors.orange, size: 20)
+                                      else
+                                        const Icon(Icons.done_all, color: Colors.green, size: 18),
                                       const SizedBox(width: 4),
-                                      Icon(Icons.chevron_right,
-                                          color: colorGris, size: 20),
+                                      Icon(Icons.chevron_right, color: colorGris, size: 20),
                                     ],
                                   ),
                                   onTap: () {
