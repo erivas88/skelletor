@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import 'dart:math';
+
+class ChartData {
+  ChartData(this.x, this.y);
+  final DateTime x;
+  final double y;
+}
 
 class ChartAnalysisScreen extends StatefulWidget {
   final String estacion;
@@ -21,37 +28,88 @@ class ChartAnalysisScreen extends StatefulWidget {
 
 class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
-  List<double> _historicalData = [];
+  List<ChartData> _historicalData = [];
   late Future<void> _chartDataFuture;
+  
   double _mean = 0;
   double _sigma = 0;
+  double? _min3Sigma;
+  double? _max3Sigma;
   bool _isOutOfRange = false;
+  
+  // Custom unit mapping (simplified)
+  String _unit = '';
 
   @override
   void initState() {
     super.initState();
+    _setUnit();
     _chartDataFuture = _loadAndCalculateData();
   }
 
-  Future<void> _loadAndCalculateData() async {
-    // 1. Fetch optimized data
-    final data = await _dbHelper.getHistoricalValues(widget.estacion, widget.parametro);
-    
-    if (data.isEmpty) return;
+  void _setUnit() {
+    switch (widget.parametro.toLowerCase()) {
+      case 'temperatura': _unit = '°C'; break;
+      case 'ph': _unit = 'u.pH'; break;
+      case 'conductividad': _unit = 'µS/cm'; break;
+      case 'oxigeno': _unit = 'mg/l'; break;
+      case 'turbiedad': _unit = 'NTU'; break;
+      case 'profundidad':
+      case 'nivel': _unit = 'm'; break;
+      default: _unit = '';
+    }
+  }
 
-    // 2. Do the math
+  Future<void> _loadAndCalculateData() async {
+    // Fetch from normalized table
+    final historyRows = await _dbHelper.getHistorialMuestrasByStationName(widget.estacion);
+    
+    // Filter by parameter
+    final paramRows = historyRows.where((row) => row['parametro'] == widget.parametro).toList();
+    
+    // Sort by date ascending
+    paramRows.sort((a, b) => (a['fecha'] as String).compareTo(b['fecha'] as String));
+
+    final List<ChartData> parsedData = [];
+    final List<double> numericValues = [];
+
+    for (var row in paramRows) {
+      if (row['valor'] != null && row['fecha'] != null) {
+        final val = (row['valor'] as num).toDouble();
+        final date = DateTime.tryParse(row['fecha'].toString());
+        if (date != null) {
+          parsedData.add(ChartData(date, val));
+          numericValues.add(val);
+        }
+      }
+    }
+
+    if (numericValues.isEmpty) return;
+
+    // Do the math
+    _calculateRanges(numericValues);
+
+    // Assign data for the chart
+    _historicalData = parsedData; 
+  }
+
+  void _calculateRanges(List<double> data) {
+    if (data.isEmpty) return;
+    
     final double sum = data.reduce((a, b) => a + b);
     _mean = sum / data.length;
     
-    final double variance = data.map((x) => pow(x - _mean, 2)).reduce((a, b) => a + b) / data.length;
-    _sigma = data.length > 1 && variance > 0 ? sqrt(variance) : 0.0;
+    final double variance = data.map((x) => pow(x - _mean, 2)).reduce((a, b) => a + b) / (data.length > 1 ? data.length - 1 : 1);
+    _sigma = variance > 0 ? sqrt(variance) : 0.0;
     
-    if (widget.currentInputValue != null) {
-      _isOutOfRange = widget.currentInputValue! < (_mean - 3 * _sigma) || widget.currentInputValue! > (_mean + 3 * _sigma);
-    }
-
-    // 3. Assign data for the chart
-    _historicalData = data; 
+    setState(() {
+      _min3Sigma = _mean - (3 * _sigma);
+      _max3Sigma = _mean + (3 * _sigma);
+      
+      if (widget.currentInputValue != null) {
+        _isOutOfRange = widget.currentInputValue! < _min3Sigma! || widget.currentInputValue! > _max3Sigma!;
+      }
+    });
   }
 
   @override
@@ -119,23 +177,71 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
   }
 
   Widget _buildChart() {
+    final TooltipBehavior tooltip = TooltipBehavior(
+      enable: true,
+      header: '',
+      canShowMarker: true,
+      format: 'point.x : point.y $_unit',
+    );
+
     return SfCartesianChart(
-      primaryXAxis: const NumericAxis(title: AxisTitle(text: 'Muestras (Index)')),
+      tooltipBehavior: tooltip,
+      primaryXAxis: DateTimeAxis(
+        title: const AxisTitle(text: 'Fecha'),
+        dateFormat: DateFormat('dd/MM/yyyy'),
+      ),
+      primaryYAxis: NumericAxis(
+        title: AxisTitle(text: '$_unit'),
+        plotBands: <PlotBand>[
+          if (_max3Sigma != null)
+            PlotBand(
+              isVisible: true,
+              start: _max3Sigma!,
+              end: _max3Sigma!,
+              borderWidth: 2,
+              borderColor: Colors.redAccent,
+              dashArray: const <double>[5, 5],
+              text: 'Máx 3σ',
+              textStyle: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10),
+              horizontalTextAlignment: TextAnchor.end,
+            ),
+          if (_min3Sigma != null)
+            PlotBand(
+              isVisible: true,
+              start: _min3Sigma!,
+              end: _min3Sigma!,
+              borderWidth: 2,
+              borderColor: Colors.redAccent,
+              dashArray: const <double>[5, 5],
+              text: 'Mín 3σ',
+              textStyle: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10),
+              horizontalTextAlignment: TextAnchor.end,
+            ),
+        ],
+      ),
       series: <CartesianSeries>[
-        LineSeries<double, int>(
+        LineSeries<ChartData, DateTime>(
           dataSource: _historicalData,
-          xValueMapper: (_, index) => index,
-          yValueMapper: (double val, _) => val,
+          xValueMapper: (ChartData data, _) => data.x,
+          yValueMapper: (ChartData data, _) => data.y,
           name: widget.parametro,
           markerSettings: const MarkerSettings(isVisible: true),
         ),
         if (widget.currentInputValue != null)
-          ScatterSeries<double, int>(
-            dataSource: [widget.currentInputValue!],
-            xValueMapper: (_, __) => _historicalData.length,
-            yValueMapper: (val, _) => val,
-            color: Colors.blue,
-            markerSettings: const MarkerSettings(isVisible: true, shape: DataMarkerType.circle, width: 15, height: 15),
+          ScatterSeries<ChartData, DateTime>(
+            dataSource: [ChartData(DateTime.now(), widget.currentInputValue!)],
+            xValueMapper: (ChartData data, _) => data.x,
+            yValueMapper: (ChartData data, _) => data.y,
+            color: Colors.red,
+            markerSettings: const MarkerSettings(
+              isVisible: true, 
+              height: 12, 
+              width: 12, 
+              shape: DataMarkerType.circle,
+              borderWidth: 2,
+              borderColor: Colors.white,
+            ),
+            name: 'Valor Actual',
           ),
       ],
     );
@@ -147,9 +253,9 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStatCard('Media (μ)', _mean.toStringAsFixed(2)),
-          _buildStatCard('Sig (σ)', _sigma.toStringAsFixed(2)),
-          _buildStatCard('Promedio', _mean.toStringAsFixed(2)),
+          _buildStatCard('Media (μ)', '${_mean.toStringAsFixed(2)} $_unit'),
+          _buildStatCard('Sig (σ)', '${_sigma.toStringAsFixed(2)} $_unit'),
+          _buildStatCard('Tot Muestras', '${_historicalData.length}'),
         ],
       ),
     );
@@ -157,13 +263,14 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
 
   Widget _buildStatCard(String label, String value) {
     return Card(
+      elevation: 2,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         child: Column(
           children: [
             Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
