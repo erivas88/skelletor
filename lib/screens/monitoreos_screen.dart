@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 import 'registrar_monitoreo_screen.dart';
@@ -177,9 +178,16 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                           final bool isDraft = item['is_draft'] == 1;
                           final bool isFallido = item['monitoreo_fallido'] == 'true' || item['monitoreo_fallido'] == 1 || item['monitoreo_fallido'] == 'SI';
                           
-                          final String stationName = item['estacion_name'] ?? item['estacion_id']?.toString() ?? 'Sin Estación';
-                          final String fechaStr = item['fecha_hora'] ?? item['fecha'] ?? 'Sin Fecha';
-                          final String fecha = fechaStr.contains('T') ? fechaStr.split('T')[0] : fechaStr;
+                          final String nombrePunto = item['nombre_estacion']?.toString() ?? 'Sin Punto';
+                          String fechaMostrada = 'Sin fecha';
+                          if (item['fecha_hora'] != null) {
+                            try {
+                              final DateTime dt = DateTime.parse(item['fecha_hora']);
+                              fechaMostrada = DateFormat('yyyy-MM-dd HH:mm').format(dt); 
+                            } catch (e) {
+                              fechaMostrada = item['fecha_hora'].toString();
+                            }
+                          }
 
                           return Padding(
                             padding: const EdgeInsets.symmetric(
@@ -227,7 +235,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                     ),
                                   ),
                                   title: Text(
-                                    'Punto: $stationName',
+                                    'Punto: $nombrePunto',
                                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -236,7 +244,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                     children: [
                                       const SizedBox(height: 4),
                                       Text(
-                                        'Fecha: $fecha',
+                                        'Fecha: $fechaMostrada',
                                         style: TextStyle(color: colorGris, fontSize: 13),
                                       ),
                                     ],

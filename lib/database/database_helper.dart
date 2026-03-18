@@ -204,8 +204,13 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getMonitoreosList() async {
     final db = await database;
-    // 🚨 FIX: Cambiamos 'fecha' por 'fecha_hora'
-    return await db.query('monitoreos', orderBy: 'fecha_hora DESC');
+    // 🚨 FIX: Join with stations to get the actual name for the UI
+    return await db.rawQuery('''
+      SELECT m.*, COALESCE(s.name, 'Estación Desconocida') AS nombre_estacion
+      FROM monitoreos m
+      LEFT JOIN stations s ON m.estacion_id = s.id
+      ORDER BY m.fecha_hora DESC
+    ''');
   }
 
   Future<Map<String, dynamic>?> getRegistroMonitoreoById(int id) async {

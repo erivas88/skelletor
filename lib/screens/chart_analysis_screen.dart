@@ -40,11 +40,35 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
   // Custom unit mapping (simplified)
   String _unit = '';
 
+  double? _dynamicInputValue;
+  late TextEditingController _overrideController;
+
   @override
   void initState() {
     super.initState();
     _setUnit();
+    _dynamicInputValue = widget.currentInputValue;
+    _overrideController = TextEditingController(text: _dynamicInputValue?.toStringAsFixed(2) ?? '');
     _chartDataFuture = _loadAndCalculateData();
+  }
+
+  @override
+  void dispose() {
+    _overrideController.dispose();
+    super.dispose();
+  }
+
+  void _updateChartValue() {
+    final double? parsedValue = double.tryParse(_overrideController.text);
+    if (parsedValue != null) {
+      setState(() {
+        _dynamicInputValue = parsedValue;
+        if (_min3Sigma != null && _max3Sigma != null) {
+          _isOutOfRange = parsedValue < _min3Sigma! || parsedValue > _max3Sigma!;
+        }
+      });
+      FocusScope.of(context).unfocus();
+    }
   }
 
   void _setUnit() {
@@ -106,8 +130,8 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
       _min3Sigma = _mean - (3 * _sigma);
       _max3Sigma = _mean + (3 * _sigma);
       
-      if (widget.currentInputValue != null) {
-        _isOutOfRange = widget.currentInputValue! < _min3Sigma! || widget.currentInputValue! > _max3Sigma!;
+      if (_dynamicInputValue != null) {
+        _isOutOfRange = _dynamicInputValue! < _min3Sigma! || _dynamicInputValue! > _max3Sigma!;
       }
     });
   }
@@ -116,7 +140,8 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.estacion} [${widget.parametro}]'),
+        title: Text(widget.estacion),
+        centerTitle: true,
       ),
       body: FutureBuilder<void>(
         future: _chartDataFuture,
@@ -137,7 +162,7 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
           return Column(
             children: [
               _buildStatusBanner(),
-              _buildCurrentValueDisplay(),
+              _buildDataInputBar(),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -153,39 +178,67 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
     );
   }
 
-  Widget _buildCurrentValueDisplay() {
+  Widget _buildDataInputBar() {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final String paramName = widget.parametro;
     final String capitalizedParam = paramName.isNotEmpty ? '${paramName[0].toUpperCase()}${paramName.substring(1)}' : 'Valor';
-    final String nowStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            children: [
-              Text(
-                nowStr,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const Spacer(),
-              Text(
-                '$capitalizedParam [ $_unit ]',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
+    
+    return Container(
+      width: double.infinity,
+      color: isDarkMode ? Colors.black.withValues(alpha: 0.2) : Colors.grey.shade100,
+      padding: const EdgeInsets.all(16.0),
+      margin: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        children: [
+          const Icon(Icons.arrow_forward, size: 20, color: Colors.grey),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$capitalizedParam [ $_unit ]',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _dynamicInputValue?.toStringAsFixed(2) ?? 'S/D',
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text(
-            widget.currentInputValue?.toStringAsFixed(2) ?? 'S/D',
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          const SizedBox(width: 16),
+          SizedBox(
+            width: 80,
+            child: TextField(
+              controller: _overrideController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: '00.00',
+              ),
+              onSubmitted: (_) => _updateChartValue(),
+            ),
           ),
-        ),
-      ],
+          const SizedBox(width: 16),
+          Material(
+            color: Colors.blueAccent,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: _updateChartValue,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                child: const Icon(Icons.trending_up, size: 24, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -273,17 +326,17 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
           name: widget.estacion,
           markerSettings: const MarkerSettings(isVisible: false),
         ),
-        if (widget.currentInputValue != null)
+        if (_dynamicInputValue != null)
           ScatterSeries<ChartData, DateTime>(
-            dataSource: [ChartData(DateTime.now(), widget.currentInputValue!)],
+            dataSource: [ChartData(DateTime.now(), _dynamicInputValue!)],
             xValueMapper: (ChartData data, _) => data.x,
             yValueMapper: (ChartData data, _) => data.y,
             color: Colors.red, // 1. Sets the legend color
             name: 'Valor Actual',
             markerSettings: const MarkerSettings(
               isVisible: true,
-              height: 12, 
-              width: 12,
+              height: 16, 
+              width: 16,
               shape: DataMarkerType.circle,
               color: Colors.red, // 🚨 CRITICAL FIX: Forces the marker fill to be red
               borderColor: Colors.white, // Thin white border for contrast
@@ -296,30 +349,63 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
 
   Widget _buildStatsCards() {
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStatCard('Media (μ)', '${_mean.toStringAsFixed(2)} $_unit'),
-          _buildStatCard('Sig (σ)', '${_sigma.toStringAsFixed(2)} $_unit'),
-          _buildStatCard('Tot Muestras', '${_historicalData.length}'),
+          Expanded(
+            child: _buildStatCard('Desviacion Estandar (σ)', _sigma.toStringAsFixed(2), _unit),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildStatCard('Promedio', _mean.toStringAsFixed(2), _unit),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildStatCard(String label, String value) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        child: Column(
-          children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+  Widget _buildStatCard(String title, String value, [String unit = '']) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0), // Reduce padding slightly to save space
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          // Numerical Value (Number on top)
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          // Unit (Measurement on bottom)
+          if (unit.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              unit,
+              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

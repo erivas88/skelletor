@@ -348,12 +348,27 @@ _turbidimetroSeleccionado = eq.codigo;
         } catch (_) {}
       }
 
-      // 4. Numeric fields
-      _tempController.text = data['temp']?.toString() ?? '';
-      _phController.text = data['ph']?.toString() ?? '';
-      _condController.text = data['conductividad']?.toString() ?? '';
-      _oxigenoController.text = data['oxigeno']?.toString() ?? '';
-      _turbiedadController.text = data['turbiedad']?.toString() ?? '';
+      // 4. Load details from historial_mediciones
+      _dbHelper.database.then((db) async {
+        final details = await db.query('historial_mediciones', where: 'monitoreo_id = ?', whereArgs: [id]);
+        setState(() {
+          for (var row in details) {
+            final param = row['parametro'];
+            final value = row['valor'].toString();
+            
+            switch (param) {
+              case 'temperatura': _tempController.text = value; break;
+              case 'ph': _phController.text = value; break;
+              case 'conductividad': _condController.text = value; break;
+              case 'oxigeno': _oxigenoController.text = value; break;
+              case 'turbiedad': _turbiedadController.text = value; break;
+              case 'profundidad': _profundidadController.text = value; break;
+              case 'nivel': _nivelTerrenoController.text = value; break;
+            }
+          }
+        });
+      });
+
       _imagePath = data['foto_path'];
       _fotoMultiparametroPath = data['foto_multiparametro'];
       _fotoTurbiedadPath = data['foto_turbiedad'];
@@ -888,6 +903,7 @@ _turbidimetroSeleccionado = eq.codigo;
               hasHistory: _hasHistory,
               minAllowed: _parameterRanges['profundidad']?['min'],
               maxAllowed: _parameterRanges['profundidad']?['max'],
+              bypassValidation: true, // 🚨 CRITICAL: Force green check for valid numbers
             ),
           ),
           
@@ -1692,6 +1708,7 @@ class CustomParametroInputRow extends StatefulWidget {
 
   final String parameterKey; // e.g., 'nivel', 'ph', 'temperatura'
   final String selectedEstacion;
+  final bool bypassValidation; // 🚨 NEW
 
   const CustomParametroInputRow({
     super.key,
@@ -1708,6 +1725,7 @@ class CustomParametroInputRow extends StatefulWidget {
     this.maxAllowed,
     this.hasHistory = false,
     this.onPulseTap,
+    this.bypassValidation = false, // Default to false to keep standard behavior
   });
 
   @override
@@ -1754,7 +1772,16 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
       return;
     }
 
-    // 2. STRICT RULE: If NO history exists, it is an ANOMALY by default (Red)
+    // 🚨 2. BYPASS LOGIC: If flagged, any valid number gets a green check immediately.
+    if (widget.bypassValidation) {
+      setState(() {
+        _isValidated = true;
+        _isOutOfRange = false;
+      });
+      return;
+    }
+
+    // 3. STRICT RULE: If NO history exists, it is an ANOMALY by default (Red)
     if (!widget.hasHistory || widget.minAllowed == null || widget.maxAllowed == null) {
       setState(() {
         _isValidated = false; // NO Green Check
@@ -1763,7 +1790,7 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
       return;
     }
 
-    // 3. 3-Sigma Rule: Check bounds
+    // 4. 3-Sigma Rule: Check bounds
     bool isOut = val < widget.minAllowed! || val > widget.maxAllowed!;
     
     setState(() {
