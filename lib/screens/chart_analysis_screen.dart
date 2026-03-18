@@ -282,8 +282,8 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
             name: 'Valor Actual',
             markerSettings: const MarkerSettings(
               isVisible: true,
-              height: 16, 
-              width: 16,
+              height: 12, 
+              width: 12,
               shape: DataMarkerType.circle,
               color: Colors.red, // 🚨 CRITICAL FIX: Forces the marker fill to be red
               borderColor: Colors.white, // Thin white border for contrast
