@@ -230,7 +230,7 @@ class DatabaseHelper {
     await _log('🔄 [SYNC-HISTORIAL] Iniciando sincronización de historial de mediciones...');
     final db = await database;
     try {
-      await db.delete('historial_mediciones', where: 'monitoreo_id IS NULL'); 
+      //await db.delete('historial_mediciones', where: 'monitoreo_id IS NULL'); 
       Batch batch = db.batch();
       for (var row in parsedData) {
         batch.insert('historial_mediciones', row);
