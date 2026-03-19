@@ -1,21 +1,29 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../database/database_helper.dart';
 
 class ApiService {
-  static const String _baseUrl = 'https://gpconsultores.cl/apicollector/sync.php?endpoint=';
-  static const String _auth = 'collector:gp2026';
+  final DatabaseHelper _dbHelper = DatabaseHelper();
 
   Future<Map<String, dynamic>> fetchAllData() async {
-    final String basicAuth = 'Basic ${base64Encode(utf8.encode(_auth))}';
+    final config = await _dbHelper.getActiveUrlConfig();
+    if (config == null) throw Exception('No hay una configuración de API activa.');
 
-    final endpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros'];
+    final baseUrl = config['url'];
+    final auth = '${config['usuario']}:${config['contrasenia']}';
+    final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
+
+    final endpointData = await _dbHelper.getEndpoints();
+    final endpoints = endpointData.map((e) => e['nombre'].toString()).toList();
     
+    if (endpoints.isEmpty) throw Exception('No hay endpoints configurados.');
+
     final Map<String, dynamic> allResults = {};
 
     try {
       final responses = await Future.wait(
         endpoints.map((e) => http.get(
-          Uri.parse('$_baseUrl$e'),
+          Uri.parse('$baseUrl$e'),
           headers: {'Authorization': basicAuth},
         )),
       );
@@ -41,8 +49,18 @@ class ApiService {
   }
 
   Future<dynamic> fetchHistorialMuestras(String programa, List<String> estaciones) async {
-    final String basicAuth = 'Basic ${base64Encode(utf8.encode(_auth))}';
-    final fullUrl = 'https://gpconsultores.cl/apicollector/sync.php?endpoint=muestras';
+    final config = await _dbHelper.getActiveUrlConfig();
+    if (config == null) throw Exception('No hay una configuración de API activa.');
+
+    final baseUrl = config['url']; // e.g. ...sync.php?endpoint=
+    final auth = '${config['usuario']}:${config['contrasenia']}';
+    final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
+    
+    // For muestras, we replace the endpoint part or append to it. 
+    // Assuming baseUrl ends with 'endpoint='
+    final fullUrl = baseUrl.contains('endpoint=') 
+        ? baseUrl.replaceAll('endpoint=', 'endpoint=muestras')
+        : '${baseUrl}muestras';
 
     try {
       final response = await http.post(

@@ -27,6 +27,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<TipoEquipo> _tiposEquipo = [];
   List<Parametro> _parametros = [];
   String _searchQuery = '';
+  int? _selectedProgramaFilter;
 
   @override
   void initState() {
@@ -499,28 +500,68 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     if (_estacionesConPrograma.isEmpty) return const Center(child: Text('Sin datos'));
 
     final filteredItems = _estacionesConPrograma.where((item) {
-      if (_searchQuery.isEmpty) return true;
-      final name = (item['name'] ?? '').toString().toLowerCase();
-      return name.contains(_searchQuery.toLowerCase());
+      // Filter by search query
+      bool matchesSearch = true;
+      if (_searchQuery.isNotEmpty) {
+        final name = (item['name'] ?? '').toString().toLowerCase();
+        matchesSearch = name.contains(_searchQuery.toLowerCase());
+      }
+      
+      // Filter by program
+      bool matchesProgram = true;
+      if (_selectedProgramaFilter != null) {
+        matchesProgram = item['program_id'] == _selectedProgramaFilter;
+      }
+      
+      return matchesSearch && matchesProgram;
     }).toList();
 
     return Column(
       children: [
-        if (_estacionesConPrograma.length > 11)
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: 'Buscar...',
-                prefixIcon: Icon(Icons.search),
+        // Filter Row
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  decoration: const InputDecoration(
+                    hintText: 'Buscar...',
+                    prefixIcon: Icon(Icons.search),
+                    isDense: true,
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                ),
               ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 1,
+                child: DropdownButtonFormField<int?>(
+                  isExpanded: true,
+                  value: _selectedProgramaFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Programa',
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text("Todos")),
+                    ..._programas.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name, overflow: TextOverflow.ellipsis))),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedProgramaFilter = val;
+                    });
+                  },
+                ),
+              ),
+            ],
           ),
+        ),
         Expanded(
           child: ListView.builder(
             itemCount: filteredItems.length,

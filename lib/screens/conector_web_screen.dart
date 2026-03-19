@@ -16,6 +16,8 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   bool _isLoading = false;
+  String _syncStatusMessage = '';
+  String _muestrasStatusMessage = '';
 
   // Form State
   List<Program> _programs = [];
@@ -51,10 +53,17 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
   }
 
   Future<void> _syncData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _syncStatusMessage = 'Conectando al servidor...';
+    });
     try {
       final data = await _apiService.fetchAllData();
+      setState(() => _syncStatusMessage = 'Descargando programas e información...');
+      
       await _dbHelper.syncData(data);
+      setState(() => _syncStatusMessage = 'Guardando en base de datos local...');
+      
       await _loadPrograms();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -103,7 +112,28 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      
+      // Dynamic Loading Text Logic
+      List<String> selectedNames = [];
+      if (_isAllStationsChecked) {
+        selectedNames = ["todas las estaciones"];
+      } else {
+        selectedNames = _selectedStations.map((s) => s.name).toList();
+      }
+
+      String loadingText = 'Descargando datos...';
+      if (selectedNames.length == 1) {
+        loadingText = 'Se están obteniendo datos de ${selectedNames[0]}...';
+      } else if (selectedNames.length == 2) {
+        loadingText = 'Descargando ${selectedNames[0]} y ${selectedNames[1]}...';
+      } else if (selectedNames.length > 2) {
+        loadingText = 'Descargando ${selectedNames[0]}, ${selectedNames[1]} y ${selectedNames.length - 2} más...';
+      }
+      _muestrasStatusMessage = loadingText;
+    });
+
     try {
       // 1. Prepare stations list
       List<String> estacionesList;
@@ -113,35 +143,53 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
         estacionesList = _selectedStations.map((s) => s.name).toList();
       }
 
-      // 2. Perform Sync (POST)
-      final dynamic decodedJson = await _apiService.fetchHistorialMuestras(
-        _selectedProgram!.id.toString(),
-        estacionesList,
-      );
+      int totalSincronizados = 0;
 
-      // 3. Robust Parsing
-      List<dynamic> apiRecords = [];
-      if (decodedJson is List) {
-        apiRecords = decodedJson;
-      } else if (decodedJson is Map<String, dynamic>) {
-        if (decodedJson.containsKey('data') && decodedJson['data'] is List) {
-          apiRecords = decodedJson['data'];
-        } else if (decodedJson.containsKey('muestras') && decodedJson['muestras'] is List) {
-          apiRecords = decodedJson['muestras'];
-        } else {
-          apiRecords = [decodedJson];
+      // 2. Loop through stations for real-time progress
+      for (int i = 0; i < estacionesList.length; i++) {
+        final stationName = estacionesList[i];
+        
+        setState(() {
+          _muestrasStatusMessage = 'Descargando datos de $stationName...\n(Estación ${i + 1} de ${estacionesList.length})';
+        });
+
+        // Fetch data for this specific station
+        final dynamic decodedJson = await _apiService.fetchHistorialMuestras(
+          _selectedProgram!.id.toString(),
+          [stationName],
+        );
+
+        // Robust Parsing (existing logic adapted for single station results)
+        List<dynamic> apiRecords = [];
+        if (decodedJson is List) {
+          apiRecords = decodedJson;
+        } else if (decodedJson is Map<String, dynamic>) {
+          if (decodedJson.containsKey('data') && decodedJson['data'] is List) {
+            apiRecords = decodedJson['data'];
+          } else if (decodedJson.containsKey('muestras') && decodedJson['muestras'] is List) {
+            apiRecords = decodedJson['muestras'];
+          } else {
+            apiRecords = [decodedJson];
+          }
         }
+
+        final List<Map<String, dynamic>> parsedData = _apiService.transformToLongFormat(apiRecords);
+        
+        // Save incrementally
+        await _dbHelper.syncHistoricalData(parsedData);
+        totalSincronizados += parsedData.length;
+
+        // Small delay to allow the user to read the message if the API is fast
+        await Future.delayed(const Duration(milliseconds: 300));
       }
 
-      // 4. Transform to Long Format
-      final List<Map<String, dynamic>> parsedData = _apiService.transformToLongFormat(apiRecords);
-
-      // 5. Save to DB using High-Performance Batch
-      await _dbHelper.syncHistoricalData(parsedData);
+      setState(() {
+        _muestrasStatusMessage = '¡Sincronización finalizada con éxito!';
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Se sincronizaron ${parsedData.length} mediciones históricas')),
+          SnackBar(content: Text('Se sincronizaron $totalSincronizados mediciones históricas')),
         );
       }
     } catch (e) {
@@ -220,9 +268,15 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
             ),
           ),
           const SizedBox(height: 40),
-          if (_isLoading)
-            const CircularProgressIndicator()
-          else
+          if (_isLoading) ...[
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              _syncStatusMessage,
+              style: TextStyle(color: theme.colorScheme.primary, fontSize: 13, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
+            ),
+          ] else
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(30),
@@ -410,9 +464,15 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
             ),
           ),
           const SizedBox(height: 50),
-          if (_isLoading)
-            const Center(child: CircularProgressIndicator())
-          else
+          if (_isLoading) ...[
+            const Center(child: CircularProgressIndicator()),
+            const SizedBox(height: 16),
+            Text(
+              _muestrasStatusMessage,
+              style: TextStyle(color: theme.colorScheme.secondary, fontSize: 13, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
+            ),
+          ] else
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(30),

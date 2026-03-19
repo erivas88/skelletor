@@ -42,7 +42,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
       if (samples.isNotEmpty && samples.first['fecha'] != null) {
         try {
           DateTime dt = DateTime.parse(samples.first['fecha']);
-          formattedDate = DateFormat('yyyy-MM-dd HH:mm').format(dt);
+          formattedDate = DateFormat('dd/MM/yyyy').format(dt);
         } catch (e) {
           formattedDate = samples.first['fecha'].toString();
         }

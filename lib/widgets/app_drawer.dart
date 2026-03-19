@@ -130,6 +130,13 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuItem(
                   context,
+                  title: 'Configuración API',
+                  icon: Icons.api_outlined,
+                  targetRoute: '/security_lock',
+                  isDarkMode: isDarkMode,
+                ),
+                _buildMenuItem(
+                  context,
                   title: 'Settings',
                   icon: Icons.settings_outlined,
                   targetRoute: '/settings',

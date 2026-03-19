@@ -60,11 +60,60 @@ class DatabaseHelper {
     // await deleteDatabase(path); 
 
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
-    return await openDatabase(
+    Database db = await openDatabase(
       path,
       version: 1,
       onCreate: _createDB,
     );
+    await _ensureApiTablesExist(db);
+    return db;
+  }
+
+  Future<void> _ensureApiTablesExist(Database db) async {
+    // Check if url_acces exists
+    var res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='url_acces'");
+    if (res.isEmpty) {
+      await _log('🏗️ [MIGRATION] Creando tabla url_acces para base de datos existente...');
+      await db.execute('''
+        CREATE TABLE url_acces (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          url TEXT NOT NULL,
+          usuario TEXT NOT NULL,
+          contrasenia TEXT NOT NULL,
+          is_active INTEGER DEFAULT 0
+        )
+      ''');
+      await db.insert('url_acces', {
+        'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=',
+        'usuario': 'collector',
+        'contrasenia': 'gp2026',
+        'is_active': 1 
+      });
+    }
+
+    // Check if endpoints exists
+    res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='endpoints'");
+    if (res.isEmpty) {
+      await _log('🏗️ [MIGRATION] Creando tabla endpoints para base de datos existente...');
+      await db.execute('''
+        CREATE TABLE endpoints (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nombre TEXT NOT NULL
+        )
+      ''');
+      final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros'];
+      for (String ep in defaultEndpoints) {
+        await db.insert('endpoints', {'nombre': ep});
+      }
+    }
+
+    // Check if security exists
+    res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='security'");
+    if (res.isEmpty) {
+      await _log('🏗️ [MIGRATION] Creando tabla security para base de datos existente...');
+      await db.execute('CREATE TABLE security (id INTEGER PRIMARY KEY AUTOINCREMENT, pin TEXT NOT NULL)');
+      await db.insert('security', {'pin': '4567'});
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -108,6 +157,9 @@ class DatabaseHelper {
     await db.execute('CREATE TABLE matrices (id_matriz INTEGER PRIMARY KEY, nombre_matriz TEXT)');
     await db.execute('CREATE TABLE metodos (id_metodo INTEGER PRIMARY KEY, metodo TEXT)');
     await db.execute('CREATE TABLE tipos_equipo (id_form INTEGER PRIMARY KEY, tipo TEXT)');
+    await db.execute('CREATE TABLE security (id INTEGER PRIMARY KEY AUTOINCREMENT, pin TEXT NOT NULL)');
+
+    await db.insert('security', {'pin': '4567'});
 
     // 3. ENGLISH SCHEMA & MANY-TO-MANY RELATIONSHIPS
     await db.execute('CREATE TABLE programs (id INTEGER PRIMARY KEY, name TEXT)');
@@ -138,6 +190,37 @@ class DatabaseHelper {
         minimo REAL, maximo REAL, activo INTEGER
       )
     ''');
+
+    // 6. Dynamic API Config
+    await db.execute('''
+      CREATE TABLE url_acces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL,
+        usuario TEXT NOT NULL,
+        contrasenia TEXT NOT NULL,
+        is_active INTEGER DEFAULT 0
+      )
+    ''');
+
+    await db.insert('url_acces', {
+      'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=',
+      'usuario': 'collector',
+      'contrasenia': 'gp2026',
+      'is_active': 1 
+    });
+
+    await db.execute('''
+      CREATE TABLE endpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL
+      )
+    ''');
+
+    final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros'];
+    for (String ep in defaultEndpoints) {
+      await db.insert('endpoints', {'nombre': ep});
+    }
+
     await _log('✅ [SCHEMA] Tablas construidas con éxito.');
   }
 
@@ -359,6 +442,7 @@ class DatabaseHelper {
         COALESCE(s.latitude, 0.0) AS latitud, 
         COALESCE(s.longitude, 0.0) AS longitude, 
         COALESCE(s.longitude, 0.0) AS longitud, 
+        COALESCE(p.id, 0) AS program_id,
         COALESCE(p.name, 'Sin Programa') AS program_name 
       FROM stations s
       LEFT JOIN program_stations ps ON s.id = ps.station_id
@@ -456,6 +540,75 @@ class DatabaseHelper {
   }
   Future<int> updateEquipo(Map<String, dynamic> item) async => database.then((db) => db.update('equipos', item, where: 'id = ?', whereArgs: [item['id']]));
   Future<int> deleteEquipo(int id) async => database.then((db) => db.delete('equipos', where: 'id = ?', whereArgs: [id]));
+
+  // --- API CONFIG CRUD METHODS ---
+
+  Future<List<Map<String, dynamic>>> getUrlAccess() async {
+    final db = await database;
+    return await db.query('url_acces', orderBy: 'id ASC');
+  }
+
+  Future<Map<String, dynamic>?> getActiveUrlConfig() async {
+    final db = await database;
+    final maps = await db.query('url_acces', where: 'is_active = 1', limit: 1);
+    return maps.isNotEmpty ? maps.first : null;
+  }
+
+  Future<int> addUrlAccess(Map<String, dynamic> item) async {
+    final db = await database;
+    return await db.insert('url_acces', item);
+  }
+
+  Future<int> updateUrlAccess(Map<String, dynamic> item) async {
+    final db = await database;
+    return await db.update('url_acces', item, where: 'id = ?', whereArgs: [item['id']]);
+  }
+
+  Future<int> deleteUrlAccess(int id) async {
+    final db = await database;
+    return await db.delete('url_acces', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> setActiveUrl(int id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update('url_acces', {'is_active': 0});
+      await txn.update('url_acces', {'is_active': 1}, where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getEndpoints() async {
+    final db = await database;
+    return await db.query('endpoints', orderBy: 'nombre ASC');
+  }
+
+  Future<int> addEndpoint(String nombre) async {
+    final db = await database;
+    return await db.insert('endpoints', {'nombre': nombre});
+  }
+
+  Future<int> updateEndpoint(int id, String nombre) async {
+    final db = await database;
+    return await db.update('endpoints', {'nombre': nombre}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> deleteEndpoint(int id) async {
+    final db = await database;
+    return await db.delete('endpoints', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- SECURITY PIN METHODS ---
+
+  Future<String?> getPin() async {
+    final db = await database;
+    final maps = await db.query('security', limit: 1);
+    return maps.isNotEmpty ? maps.first['pin'] as String : null;
+  }
+
+  Future<int> updatePin(String newPin) async {
+    final db = await database;
+    return await db.update('security', {'pin': newPin});
+  }
 
   // --- REFACTORED syncData (Bulletproof Null Safety + Narrative Logs) ---
 

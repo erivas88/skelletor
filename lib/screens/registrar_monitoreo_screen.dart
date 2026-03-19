@@ -748,7 +748,20 @@ _turbidimetroSeleccionado = eq.codigo;
                 onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
               ),
               if (_turbidimetroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController, parameterKey: 'turbiedad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['turbiedad']?['min'], maxAllowed: _parameterRanges['turbiedad']?['max'], onPulseTap: () => _navigateToChart('turbiedad', _turbiedadController)),
+                CustomParametroInputRow(
+                  label: 'Turbiedad [NTU]',
+                  hintText: 'Ingrese turbiedad',
+                  isDarkMode: isDarkMode,
+                  controller: _turbiedadController,
+                  parameterKey: 'turbiedad',
+                  selectedEstacion: _estacionSeleccionada?.name ?? '',
+                  hasHistory: _hasHistory,
+                  minAllowed: _parameterRanges['turbiedad']?['min'],
+                  maxAllowed: _parameterRanges['turbiedad']?['max'],
+                  showPulseIcon: false, // 🚨 Hide the chart icon
+                  bypassValidation: true, // 🚨 CRITICAL: Force green check for valid numbers
+                  onPulseTap: () => _navigateToChart('turbiedad', _turbiedadController),
+                ),
                 _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA TURBIEDAD',
                   path: _fotoTurbiedadPath,
@@ -795,9 +808,80 @@ _turbidimetroSeleccionado = eq.codigo;
                   if (mounted && result != null) setState(() => _muestreoIsotopico = result);
                 }
               ),
-              CustomTextInputRow(label: 'Código Laboratorio', hintText: 'Ingrese código de laboratorio', isDarkMode: isDarkMode, controller: _codLabController, isMandatory: false),
+              // REACTIVE Código Laboratorio
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _codLabController,
+                builder: (context, value, child) {
+                  final bool hasText = value.text.trim().isNotEmpty;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          hasText ? Icons.check_circle : Icons.cancel,
+                          color: hasText ? Colors.green : Colors.grey,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextField(
+                            controller: _codLabController,
+                            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+                            decoration: InputDecoration(
+                              labelText: 'Código Laboratorio',
+                              hintText: 'Ingrese código de laboratorio',
+                              labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                              hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
+                              border: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const Divider(height: 1),
               const SizedBox(height: 16),
-              CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController, isMandatory: false, showLeadingIcon: false),
+              // REACTIVE Descripción / Observación
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _obsController,
+                builder: (context, value, child) {
+                  final bool hasText = value.text.trim().isNotEmpty;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12.0),
+                          child: Icon(
+                            hasText ? Icons.check_circle : Icons.chat_bubble_outline,
+                            color: hasText ? Colors.green : Colors.grey,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextField(
+                            controller: _obsController,
+                            maxLines: null,
+                            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+                            decoration: InputDecoration(
+                              labelText: 'Descripción / Observación',
+                              hintText: 'Ingrese observación / descripción',
+                              labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                              hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
+                              border: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 8),
             ]),
             const SizedBox(height: 16),
@@ -921,7 +1005,43 @@ _turbidimetroSeleccionado = eq.codigo;
           ),
 
           if (_isMonitoreoFallido)
-            CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController, isMandatory: false, showLeadingIcon: false),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _obsController,
+              builder: (context, value, child) {
+                final bool hasText = value.text.trim().isNotEmpty;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12.0),
+                        child: Icon(
+                          hasText ? Icons.check_circle : Icons.chat_bubble_outline,
+                          color: hasText ? Colors.green : Colors.grey,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextField(
+                          controller: _obsController,
+                          maxLines: null,
+                          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+                          decoration: InputDecoration(
+                            labelText: 'Descripción / Observación',
+                            hintText: 'Ingrese observación / descripción',
+                            labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                            hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           
           _buildPhotoPreview(isDarkMode),
           
