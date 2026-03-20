@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
+import '../services/api_service.dart';
 import '../widgets/app_drawer.dart';
 
 class UsuariosScreen extends StatefulWidget {
@@ -16,13 +17,15 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   List<Usuario> _usuarios = [];
   String _searchQuery = '';
 
+  String _loadingMessage = 'Iniciando...';
+
   @override
   void initState() {
     super.initState();
     _loadUsers();
   }
 
-  Future<void> _loadUsers() async {
+  Future<void> _loadUsers({bool showMessage = false}) async {
     setState(() => _isLoading = true);
     try {
       final usuarios = await _dbHelper.getUsuarios();
@@ -30,6 +33,11 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         _usuarios = usuarios;
         _isLoading = false;
       });
+      if (showMessage && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lista de usuarios actualizada')),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -37,6 +45,42 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         );
       }
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _syncAndLoadUsers() async {
+    setState(() {
+      _isLoading = true;
+      _loadingMessage = 'Iniciando sincronización...';
+    });
+    
+    try {
+      final ApiService apiService = ApiService();
+      
+      setState(() => _loadingMessage = 'Conectando con el servidor...');
+      final data = await apiService.fetchAllData();
+      
+      setState(() => _loadingMessage = 'Sincronizando base de datos local...');
+      await _dbHelper.syncData(data);
+      
+      setState(() => _loadingMessage = 'Actualizando lista de usuarios...');
+      await _loadUsers(showMessage: false);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sincronización completada exitosamente.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -117,10 +161,31 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     }).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Usuarios')),
+      appBar: AppBar(
+        title: const Text('Usuarios'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refrescar',
+            onPressed: () => _syncAndLoadUsers(),
+          ),
+        ],
+      ),
       drawer: const AppDrawer(currentRoute: '/usuarios'),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  Text(
+                    _loadingMessage,
+                    style: const TextStyle(fontSize: 16, color: Colors.blue),
+                  ),
+                ],
+              ),
+            )
           : Column(
               children: [
                 if (_usuarios.length > 5)
@@ -138,31 +203,31 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                   child: filteredUsers.isEmpty
                       ? const Center(child: Text('Sin usuarios'))
                       : ListView.builder(
-                          itemCount: filteredUsers.length,
-                          itemBuilder: (context, index) {
-                            final user = filteredUsers[index];
-                            return ListTile(
-                              leading: const CircleAvatar(child: Icon(Icons.person)),
-                              title: Text('${user.nombre} ${user.apellido}'),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue),
-                                    onPressed: () => _showFormDialog(user: user),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () => _confirmDelete(user.idUsuario),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
+                        itemCount: filteredUsers.length,
+                        itemBuilder: (context, index) {
+                          final user = filteredUsers[index];
+                          return ListTile(
+                            leading: const CircleAvatar(child: Icon(Icons.person)),
+                            title: Text('${user.nombre} ${user.apellido}'),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, color: Colors.blue),
+                                  onPressed: () => _showFormDialog(user: user),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () => _confirmDelete(user.idUsuario),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showFormDialog(),
         child: const Icon(Icons.add),

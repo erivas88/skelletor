@@ -174,116 +174,129 @@ class _UrlAccessTabState extends State<UrlAccessTab> {
               borderRadius: BorderRadius.circular(15),
               side: isActive ? BorderSide(color: theme.primaryColor, width: 2) : BorderSide.none,
             ),
-            child: ListTile(
-              dense: true,
-              visualDensity: VisualDensity.compact,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-              leading: Radio<int>(
-                value: item['id'],
-                fillColor: MaterialStateProperty.resolveWith<Color>((states) {
-                  if (states.contains(MaterialState.selected)) {
-                    return theme.colorScheme.primary;
-                  }
-                  return theme.colorScheme.onSurface.withOpacity(0.6);
-                }),
-                groupValue: _urls.firstWhere((u) => u['is_active'] == 1, orElse: () => {'id': -1})['id'],
-                onChanged: (val) async {
-                  if (val != null) {
-                    await _dbHelper.setActiveUrl(val);
-                    _loadData();
-                  }
-                },
-              ),
-                title: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            item['url'], 
-                            style: TextStyle(
-                              fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                              fontSize: 14,
-                              // Elige el color primario del tema para resaltar servidores activos
-                              color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(Icons.person, size: 12, color: isDarkMode ? Colors.white70 : Colors.grey[600]),
-                              const SizedBox(width: 4),
-                              Text(
-                                item['usuario'], 
-                                style: TextStyle(
-                                  fontSize: 12, 
-                                  color: isDarkMode ? Colors.white70 : Colors.grey[700]
-                                )
-                              ),
-                              const SizedBox(width: 8),
-                              if (isActive) 
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: theme.primaryColor.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    'ACTIVO', 
-                                    style: TextStyle(
-                                      fontSize: 10, 
-                                      fontWeight: FontWeight.bold, 
-                                      color: isDarkMode ? Colors.lightBlueAccent : Colors.blue.shade700
-                                    )
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Row(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+              child: Row(
+                children: [
+                  Radio<int>(
+                    value: item['id'],
+                    fillColor: MaterialStateProperty.resolveWith<Color>((states) {
+                      if (states.contains(MaterialState.selected)) {
+                        return theme.colorScheme.primary;
+                      }
+                      return theme.colorScheme.onSurface.withOpacity(0.6);
+                    }),
+                    groupValue: _urls.firstWhere((u) => u['is_active'] == 1, orElse: () => {'id': -1})['id'],
+                    onChanged: (val) async {
+                      if (val != null) {
+                        await _dbHelper.setActiveUrl(val);
+                        _loadData();
+                      }
+                    },
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.network_ping, color: Colors.blueAccent),
-                          onPressed: () => _testConnection(item['url']),
+                        Text(
+                          item['url'],
+                          style: TextStyle(
+                            fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
+                            fontSize: 14,
+                            color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.orangeAccent),
-                          onPressed: () => _showFormDialog(item: item),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.redAccent),
-                          onPressed: () async {
-                            final result = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Eliminar Servidor'),
-                                content: const Text('¿Está seguro de que desea eliminar este servidor?'),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('NO')),
-                                  TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('SÍ', style: TextStyle(color: Colors.red))),
-                                ],
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.person, size: 12, color: isDarkMode ? Colors.white70 : Colors.grey[600]),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                item['usuario'],
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDarkMode ? Colors.white70 : Colors.grey[700]
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            );
-                            if (result == true) {
-                              await _dbHelper.deleteUrlAccess(item['id']);
-                              _loadData();
-                            }
-                          },
+                            ),
+                            const SizedBox(width: 8),
+                            if (isActive)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: theme.primaryColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  'ACTIVO',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDarkMode ? Colors.lightBlueAccent : Colors.blue.shade700
+                                  )
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.network_ping, color: Colors.blueAccent, size: 20),
+                        onPressed: () => _testConnection(item['url']),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.edit, color: Colors.orangeAccent, size: 20),
+                        onPressed: () => _showFormDialog(item: item),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
+                        onPressed: () async {
+                          final result = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Eliminar Servidor'),
+                              content: const Text('¿Está seguro de que desea eliminar este servidor?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('NO')),
+                                TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('SÍ', style: TextStyle(color: Colors.red))),
+                              ],
+                            ),
+                          );
+                          if (result == true) {
+                            await _dbHelper.deleteUrlAccess(item['id']);
+                            _loadData();
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
+                ],
               ),
+            ),
             );
           },
         ),

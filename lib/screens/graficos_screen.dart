@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:intl/intl.dart';
 import '../widgets/app_drawer.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
+import '../providers/graph_provider.dart';
 import 'registrar_monitoreo_screen.dart'; // To use SearchableDropdown
 
-class ChartData {
-  final DateTime x;
-  final double y;
-  ChartData(this.x, this.y);
-}
 
 class GraficosScreen extends StatefulWidget {
   const GraficosScreen({super.key});
@@ -19,7 +16,7 @@ class GraficosScreen extends StatefulWidget {
   State<GraficosScreen> createState() => _GraficosScreenState();
 }
 
-class _GraficosScreenState extends State<GraficosScreen> {
+class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   
   // State variables
@@ -34,16 +31,43 @@ class _GraficosScreenState extends State<GraficosScreen> {
   bool _hasGraphed = false;
   
   // Options state
-  bool _invertirEje = true; // Initialized to ON per spec
+  bool _invertirEje = false; // Initialized to OFF per spec
   
   // Series colors
   Color _colorSerie1 = const Color(0xFF0D47A1); // Deep Blue
   Color _colorSerie2 = const Color(0xFFFF9800); // Orange
 
   @override
+  late TabController _tabController;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _updateColor1(Color c) {
+    setState(() => _colorSerie1 = c);
+    if (mounted) {
+      Provider.of<GraphProvider>(context, listen: false).updateOptions(color1: c);
+    }
+  }
+
+  void _updateColor2(Color c) {
+    setState(() => _colorSerie2 = c);
+    if (mounted) {
+      Provider.of<GraphProvider>(context, listen: false).updateOptions(color2: c);
+    }
   }
 
   Future<void> _loadData() async {
@@ -51,17 +75,30 @@ class _GraficosScreenState extends State<GraficosScreen> {
     try {
       final dbHelper = DatabaseHelper();
       
-      // 1. Fetch ALL parameters dynamically (this guarantees SDT, Turbiedad, etc. appear)
+      // 1. Fetch ALL parameters dynamically
       final params = await dbHelper.getParametros();
       
-      // 2. Fetch stations with program alias (estacion, latitud, longitud, program_name)
+      // 2. Fetch stations with program alias
       final stations = await dbHelper.getStationsWithPrograms();
       
-      setState(() {
-        _parametrosList = params;
-        _estacionesList = stations;
-        _isLoadingData = false;
-      });
+      // 3. Restore from Provider (Scenario B)
+      if (mounted) {
+        final provider = Provider.of<GraphProvider>(context, listen: false);
+        setState(() {
+          _parametrosList = params;
+          _estacionesList = stations;
+          
+          _chartDataList = provider.chartDataList;
+          _hasGraphed = provider.hasGraphed;
+          _parametrosSeleccionados = List.from(provider.parametrosSeleccionados);
+          _estacionSeleccionada = provider.selectedStation;
+          _invertirEje = provider.invertirEje;
+          _colorSerie1 = provider.colorSerie1;
+          _colorSerie2 = provider.colorSerie2;
+          
+          _isLoadingData = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingData = false);
@@ -73,6 +110,7 @@ class _GraficosScreenState extends State<GraficosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -91,7 +129,6 @@ class _GraficosScreenState extends State<GraficosScreen> {
           // 1. Chart Area
           _buildChartContent(isDarkMode),
 
-          // 2. Bottom Control Panel
           Container(
             height: 250,
             decoration: BoxDecoration(
@@ -104,32 +141,32 @@ class _GraficosScreenState extends State<GraficosScreen> {
                 ),
               ],
             ),
-            child: DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  TabBar(
-                    indicatorColor: Colors.blue,
-                    labelColor: Colors.blue,
-                    unselectedLabelColor: isDarkMode ? Colors.grey.shade400 : Colors.black54,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    tabs: const [
-                      Tab(icon: Icon(Icons.show_chart, size: 20), text: 'GRAFICAR'),
-                      Tab(icon: Icon(Icons.settings, size: 20), text: 'OPCIONES'),
+            child: Column(
+              children: [
+                TabBar(
+                  controller: _tabController,
+                  indicatorColor: Colors.blue,
+                  labelColor: Colors.blue,
+                  unselectedLabelColor: isDarkMode ? Colors.grey.shade400 : Colors.black54,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  onTap: (index) => setState(() {}),
+                  tabs: const [
+                    Tab(icon: Icon(Icons.show_chart, size: 20), text: 'GRAFICAR'),
+                    Tab(icon: Icon(Icons.settings, size: 20), text: 'OPCIONES'),
+                  ],
+                ),
+                Expanded(
+                  child: IndexedStack(
+                    index: _tabController.index,
+                    children: [
+                      // View 1: Graficar
+                      _buildGraficarView(isDarkMode),
+                      // View 2: Opciones
+                      _buildOpcionesView(),
                     ],
                   ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        // View 1: Graficar
-                        _buildGraficarView(isDarkMode),
-                        // View 2: Opciones
-                        _buildOpcionesView(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -503,6 +540,16 @@ class _GraficosScreenState extends State<GraficosScreen> {
         _chartDataList = newDataList;
         _hasGraphed = true;
       });
+
+      // Update Provider for Scenario B
+      if (mounted) {
+        Provider.of<GraphProvider>(context, listen: false).updateGraphData(
+          data: newDataList,
+          hasGraphed: true,
+          params: _parametrosSeleccionados,
+          station: _estacionSeleccionada,
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al graficar: $e')));
@@ -520,7 +567,10 @@ class _GraficosScreenState extends State<GraficosScreen> {
             child: _buildSwitchRow(
               label: 'Invert. Eje1',
               value: _invertirEje,
-              onChanged: (val) => setState(() => _invertirEje = val),
+              onChanged: (val) {
+                setState(() => _invertirEje = val);
+                Provider.of<GraphProvider>(context, listen: false).updateOptions(invertirEje: val);
+              },
             ),
           ),
           
@@ -545,11 +595,11 @@ class _GraficosScreenState extends State<GraficosScreen> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        _buildColorCircle(const Color(0xFF0D47A1), _colorSerie1 == const Color(0xFF0D47A1), (c) => setState(() => _colorSerie1 = c)),
+                        _buildColorCircle(const Color(0xFF0D47A1), _colorSerie1 == const Color(0xFF0D47A1), _updateColor1),
                         const SizedBox(width: 12),
-                        _buildColorCircle(const Color(0xFF008080), _colorSerie1 == const Color(0xFF008080), (c) => setState(() => _colorSerie1 = c)),
+                        _buildColorCircle(const Color(0xFF008080), _colorSerie1 == const Color(0xFF008080), _updateColor1),
                         const SizedBox(width: 12),
-                        _buildColorCircle(const Color(0xFF4CAF50), _colorSerie1 == const Color(0xFF4CAF50), (c) => setState(() => _colorSerie1 = c)),
+                        _buildColorCircle(const Color(0xFF4CAF50), _colorSerie1 == const Color(0xFF4CAF50), _updateColor1),
                       ],
                     ),
                     
@@ -563,11 +613,11 @@ class _GraficosScreenState extends State<GraficosScreen> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        _buildColorCircle(const Color(0xFFFF9800), _colorSerie2 == const Color(0xFFFF9800), (c) => setState(() => _colorSerie2 = c)),
+                        _buildColorCircle(const Color(0xFFFF9800), _colorSerie2 == const Color(0xFFFF9800), _updateColor2),
                         const SizedBox(width: 12),
-                        _buildColorCircle(const Color(0xFF9C27B0), _colorSerie2 == const Color(0xFF9C27B0), (c) => setState(() => _colorSerie2 = c)),
+                        _buildColorCircle(const Color(0xFF9C27B0), _colorSerie2 == const Color(0xFF9C27B0), _updateColor2),
                         const SizedBox(width: 12),
-                        _buildColorCircle(const Color(0xFFF44336), _colorSerie2 == const Color(0xFFF44336), (c) => setState(() => _colorSerie2 = c)),
+                        _buildColorCircle(const Color(0xFFF44336), _colorSerie2 == const Color(0xFFF44336), _updateColor2),
                       ],
                     ),
                   ],

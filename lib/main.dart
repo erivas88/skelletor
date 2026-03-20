@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart'; // <-- IMPORTANTE: Importam
 
 import 'theme/app_theme.dart';
 import 'theme/theme_provider.dart';
+import 'providers/graph_provider.dart';
 import 'screens/monitoreos_screen.dart';
 import 'screens/registrar_monitoreo_screen.dart';
 import 'screens/graficos_screen.dart';
@@ -29,8 +30,11 @@ void main() async {
   await dotenv.load(fileName: ".env");
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => GraphProvider()),
+      ],
       child: const MonitoreoApp(),
     ),
   );

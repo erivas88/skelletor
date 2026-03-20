@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
 import '../widgets/app_drawer.dart';
+import '../services/api_service.dart';
 
 class EstacionesScreen extends StatefulWidget {
   const EstacionesScreen({super.key});
@@ -17,6 +18,8 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
   List<Program> _programas = [];
   String _searchQuery = '';
   int? _selectedProgramFilter;
+
+  String _loadingMessage = 'Iniciando...';
 
   @override
   void initState() {
@@ -41,6 +44,41 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
         );
       }
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _refreshData() async {
+    setState(() {
+      _isLoading = true;
+      _loadingMessage = 'Iniciando sincronización...';
+    });
+    
+    try {
+      final ApiService apiService = ApiService();
+      setState(() => _loadingMessage = 'Conectando con el servidor...');
+      final data = await apiService.fetchAllData();
+      
+      setState(() => _loadingMessage = 'Sincronizando programas y estaciones...');
+      await _dbHelper.syncData(data);
+      
+      setState(() => _loadingMessage = 'Actualizando datos locales...');
+      await _loadData();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sincronización completada exitosamente.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al actualizar la información.'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -73,6 +111,7 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
               ],
             ),
           ),
+           
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCELAR')),
             ElevatedButton(
@@ -155,10 +194,30 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
     }).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Estaciones')),
+      appBar: AppBar(
+        title: const Text('Estaciones'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _refreshData(),
+          ),
+        ],
+      ),
       drawer: const AppDrawer(currentRoute: '/estaciones'),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  Text(
+                    _loadingMessage,
+                    style: const TextStyle(fontSize: 16, color: Colors.blue),
+                  ),
+                ],
+              ),
+            )
           : Column(
               children: [
                 Padding(
@@ -198,7 +257,7 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
                 ),
                 Expanded(
                   child: filteredStations.isEmpty
-                      ? const Center(child: Text('Sin estaciones'))
+                      ? const Center(child: Text('Sin estaciones guardadas'))
                       : ListView.builder(
                           itemCount: filteredStations.length,
                           itemBuilder: (context, index) {
