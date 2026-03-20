@@ -55,10 +55,9 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
       final usuarios = await _dbHelper.getUsuarios();
       final metodos = await _dbHelper.getMetodos();
       final matrices = await _dbHelper.getMatrices();
-      final programas = await _dbHelper.getPrograms(); // <-- Esta era la línea que faltaba
+      final programas = await _dbHelper.getPrograms(); 
       final estaciones = await _dbHelper.getStationsWithPrograms();
       
-      // Las líneas nuevas de los equipos
       final equipos = await _dbHelper.getAllEquiposWithTipo();
       final tiposEquipo = await _dbHelper.getTiposEquipo();
       final parametros = await _dbHelper.getParametros();
@@ -69,8 +68,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         _matrices = matrices;
         _programas = programas;
         _estacionesConPrograma = estaciones;
-        _equipos = equipos; // Asignamos equipos
-        _tiposEquipo = tiposEquipo; // Asignamos tipos
+        _equipos = equipos; 
+        _tiposEquipo = tiposEquipo; 
         _parametros = parametros;
         _isLoading = false;
       });
@@ -108,13 +107,11 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     }
   }
 
-  // --- Dialogs ---
-
   void _showFormDialog({dynamic item, required String type}) {
     final bool isEdit = item != null;
     final TextEditingController c1 = TextEditingController();
     final TextEditingController c2 = TextEditingController();
-    final TextEditingController c3 = TextEditingController(); // For lat/long or secondary values
+    final TextEditingController c3 = TextEditingController(); 
     final TextEditingController _claveController = TextEditingController();
     final TextEditingController _unidadController = TextEditingController();
     final TextEditingController _minController = TextEditingController();
@@ -345,61 +342,74 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Administración'),
-        actions: [
-          if (_isSyncing)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.sync),
-              tooltip: 'Sincronizar con Servidor',
-              onPressed: _handleSync,
-            ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          tabs: const [
-            Tab(text: 'Usuarios'),
-            Tab(text: 'Métodos'),
-            Tab(text: 'Matrices'),
-            Tab(text: 'Programas'),
-            Tab(text: 'Estaciones'),
-            Tab(text: 'Equipos'),
-            Tab(text: 'Parámetros'),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Administración'),
+          actions: [
+            if (_isSyncing)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.sync),
+                tooltip: 'Sincronizar con Servidor',
+                onPressed: _handleSync,
+              ),
           ],
+          bottom: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            tabs: const [
+              Tab(text: 'Usuarios'),
+              Tab(text: 'Métodos'),
+              Tab(text: 'Matrices'),
+              Tab(text: 'Programas'),
+              Tab(text: 'Estaciones'),
+              Tab(text: 'Equipos'),
+              Tab(text: 'Parámetros'),
+            ],
+          ),
         ),
-      ),
-      drawer: const AppDrawer(currentRoute: '/administracion'),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildTabList(_usuarios, 'Usuario'),
-                _buildTabList(_metodos, 'Método'),
-                _buildTabList(_matrices, 'Matriz'),
-                _buildTabList(_programas, 'Programa'),
-                _buildStationsTab(),
-                _buildEquiposTab(),
-                _buildTabList(_parametros, 'Parámetro'),
-              ],
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo', 'Parámetro'];
-          _showFormDialog(type: types[_tabController.index]);
-        },
-        child: const Icon(Icons.add),
+        drawer: const AppDrawer(currentRoute: '/administracion'),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildTabList(_usuarios, 'Usuario'),
+                  _buildTabList(_metodos, 'Método'),
+                  _buildTabList(_matrices, 'Matriz'),
+                  _buildTabList(_programas, 'Programa'),
+                  _buildStationsTab(),
+                  _buildEquiposTab(),
+                  _buildTabList(_parametros, 'Parámetro'),
+                ],
+              ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo', 'Parámetro'];
+            _showFormDialog(type: types[_tabController.index]);
+          },
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -452,19 +462,19 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
 
               if (type == 'Usuario') {
                 title = '${item.nombre} ${item.apellido}';
-                subtitle = ''; // ID oculto por requerimiento
+                subtitle = ''; 
                 id = item.idUsuario;
               } else if (type == 'Método') {
                 title = item.metodo;
-                subtitle = ''; // ID oculto por requerimiento
+                subtitle = ''; 
                 id = item.idMetodo;
               } else if (type == 'Matriz') {
                 title = item.nombreMatriz;
-                subtitle = ''; // ID oculto por requerimiento
+                subtitle = ''; 
                 id = item.idMatriz;
               } else if (type == 'Programa') {
                 title = item.name;
-                subtitle = ''; // ID oculto por requerimiento
+                subtitle = ''; 
                 id = item.id;
               } else if (type == 'Parámetro') {
                 title = item.nombreParametro;
@@ -500,14 +510,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     if (_estacionesConPrograma.isEmpty) return const Center(child: Text('Sin datos'));
 
     final filteredItems = _estacionesConPrograma.where((item) {
-      // Filter by search query
       bool matchesSearch = true;
       if (_searchQuery.isNotEmpty) {
         final name = (item['name'] ?? '').toString().toLowerCase();
         matchesSearch = name.contains(_searchQuery.toLowerCase());
       }
       
-      // Filter by program
       bool matchesProgram = true;
       if (_selectedProgramaFilter != null) {
         matchesProgram = item['program_id'] == _selectedProgramaFilter;
@@ -518,7 +526,6 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
 
     return Column(
       children: [
-        // Filter Row
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: Row(
