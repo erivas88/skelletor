@@ -11,8 +11,16 @@ class SettingsScreen extends StatelessWidget {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDarkMode = themeProvider.themeMode == ThemeMode.dark;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushReplacementNamed(context, '/monitoreos');
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Settings')),
       drawer: const AppDrawer(currentRoute: '/settings'),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -30,6 +38,7 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

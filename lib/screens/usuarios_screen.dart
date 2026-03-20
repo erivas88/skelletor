@@ -160,7 +160,19 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
       return full.contains(_searchQuery.toLowerCase());
     }).toList();
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('Usuarios'),
         actions: [
@@ -232,6 +244,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         onPressed: () => _showFormDialog(),
         child: const Icon(Icons.add),
       ),
-    );
-  }
+    ),
+  );
+}
 }

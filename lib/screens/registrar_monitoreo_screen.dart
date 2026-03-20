@@ -636,7 +636,11 @@ _equipoMultiparametroSeleccionado = eq.codigo;
         if (didPop) return;
         await _saveAsDraft();
         if (context.mounted) {
-          Navigator.of(context).pop();
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          } else {
+            Navigator.pushReplacementNamed(context, '/monitoreos');
+          }
         }
       },
       child: Scaffold(
