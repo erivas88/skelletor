@@ -62,11 +62,26 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _onUpgrade,
     );
     await _ensureApiTablesExist(db);
     return db;
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    await _log('🚀 [UPGRADE] Migrando base de datos de versión $oldVersion a $newVersion...');
+    if (oldVersion < 2) {
+      try {
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN equipo_nivel_id INTEGER;");
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN tipo_pozo TEXT;");
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN fecha_hora_nivel TEXT;");
+        await _log('✅ [UPGRADE] Columnas de Nivel Freático agregadas con éxito.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error o columnas ya existentes: $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
@@ -140,6 +155,9 @@ class DatabaseHelper {
         foto_path TEXT,
         foto_multiparametro TEXT,
         foto_turbiedad TEXT,
+        equipo_nivel_id INTEGER,
+        tipo_pozo TEXT,
+        fecha_hora_nivel TEXT,
         is_draft INTEGER DEFAULT 0
       )
     ''');

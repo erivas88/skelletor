@@ -115,6 +115,23 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _muestreoIsotopico != null;
   }
 
+  bool get _isFormularioCompleto {
+    if (_programaSeleccionado == null || _estacionSeleccionada == null) return false;
+    if (_isMonitoreoFallido) return _obsController.text.trim().isNotEmpty;
+    
+    if (!_isDatosMonitoreoComplete) return false;
+    
+    if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)) {
+      if (_equipoNivelSeleccionado == null || _tipoNivelPozoSeleccionado == null || _nivelTerrenoController.text.isEmpty || _fechaYHoraNivel == null) return false;
+    }
+    
+    if (!_isMultiparametroComplete) return false;
+    if (!_isTurbiedadComplete) return false;
+    if (!_isMuestreoComplete) return false;
+    
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -146,8 +163,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   Future<void> _saveAsDraft() async {
     // Only save as draft if at least some basic info is selected
     if (_programaSeleccionado == null && _estacionSeleccionada == null) return;
-    await _guardarInterno(isDraft: true);
-    debugPrint('Borrador auto-guardado id: $_currentRegistroId');
+    
+    // Dynamically evaluate if it should be a draft
+    bool isDraft = !_isFormularioCompleto;
+    
+    await _guardarInterno(isDraft: isDraft);
+    debugPrint('Auto-guardado id: $_currentRegistroId (isDraft: $isDraft)');
   }
 
   Future<void> _guardarInterno({required bool isDraft}) async {
@@ -180,6 +201,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'foto_path': _imagePath,
         'foto_multiparametro': _fotoMultiparametroPath,
         'foto_turbiedad': _fotoTurbiedadPath,
+        'equipo_nivel_id': _equiposMulti.where((e) => e.codigo == _equipoNivelSeleccionado).firstOrNull?.id,
+        'tipo_pozo': _tipoNivelPozoSeleccionado,
+        'fecha_hora_nivel': _fechaYHoraNivel?.toIso8601String(),
         'is_draft': isDraft ? 1 : 0,
       };
 
@@ -344,8 +368,19 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       if (data['turbidimetro_id'] != null) {
         try {
           final eq = _turbidimetros.firstWhere((e) => e.id == data['turbidimetro_id']);
-_turbidimetroSeleccionado = eq.codigo;
+          _turbidimetroSeleccionado = eq.codigo;
         } catch (_) {}
+      }
+
+      if (data['equipo_nivel_id'] != null) {
+        try {
+          final eq = _equiposMulti.firstWhere((e) => e.id == data['equipo_nivel_id']);
+          _equipoNivelSeleccionado = eq.codigo;
+        } catch (_) {}
+      }
+      _tipoNivelPozoSeleccionado = data['tipo_pozo'];
+      if (data['fecha_hora_nivel'] != null) {
+        _fechaYHoraNivel = DateTime.parse(data['fecha_hora_nivel']);
       }
 
       // 4. Load details from historial_mediciones
@@ -530,42 +565,29 @@ _turbidimetroSeleccionado = eq.codigo;
 
   Future<void> _guardarMonitoreo() async {
     // 1. Strict Validation
-    if (_programaSeleccionado == null || _estacionSeleccionada == null) {
-      _showError('Debe seleccionar Programa y Punto de Control');
-      return;
-    }
-
-    if (!_isMonitoreoFallido) {
-      if (!_isDatosMonitoreoComplete) {
-        _showError('Faltan Datos de Monitoreo (Ej. Inspector, Matriz, Foto).');
-        return;
-      }
-      
-      // If Subterránea is selected, validate Nivel Freático
-      if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)) {
-        if (_equipoNivelSeleccionado == null || _tipoNivelPozoSeleccionado == null || _nivelTerrenoController.text.isEmpty || _fechaYHoraNivel == null) {
-          _showError('Faltan datos obligatorios en la sección Nivel Freático.');
-          return;
+    if (!_isFormularioCompleto) {
+      if (_programaSeleccionado == null || _estacionSeleccionada == null) {
+        _showError('Debe seleccionar Programa y Punto de Control');
+      } else if (_isMonitoreoFallido) {
+        if (_obsController.text.trim().isEmpty) {
+          _showError('Debe ingresar una observación explicando por qué falló el monitoreo.');
+        }
+      } else {
+        if (!_isDatosMonitoreoComplete) {
+          _showError('Faltan Datos de Monitoreo (Ej. Inspector, Matriz, Foto).');
+        } else if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)) {
+          if (_equipoNivelSeleccionado == null || _tipoNivelPozoSeleccionado == null || _nivelTerrenoController.text.isEmpty || _fechaYHoraNivel == null) {
+            _showError('Faltan datos obligatorios en la sección Nivel Freático.');
+          }
+        } else if (!_isMultiparametroComplete) {
+          _showError('Faltan datos en la sección Multiparámetro (o su fotografía).');
+        } else if (!_isTurbiedadComplete) {
+          _showError('Faltan datos en la sección Turbiedad (o su fotografía).');
+        } else if (!_isMuestreoComplete) {
+          _showError('Faltan datos en la sección Muestreo.');
         }
       }
-
-      if (!_isMultiparametroComplete) {
-        _showError('Faltan datos en la sección Multiparámetro (o su fotografía).');
-        return;
-      }
-      if (!_isTurbiedadComplete) {
-        _showError('Faltan datos en la sección Turbiedad (o su fotografía).');
-        return;
-      }
-      if (!_isMuestreoComplete) {
-        _showError('Faltan datos en la sección Muestreo.');
-        return;
-      }
-    } else {
-      if (_obsController.text.trim().isEmpty) {
-        _showError('Debe ingresar una observación explicando por qué falló el monitoreo.');
-        return;
-      }
+      return;
     }
 
     // 2. Proceed with Final Save
@@ -814,7 +836,7 @@ _turbidimetroSeleccionado = eq.codigo;
                 builder: (context, value, child) {
                   final bool hasText = value.text.trim().isNotEmpty;
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -827,6 +849,7 @@ _turbidimetroSeleccionado = eq.codigo;
                         Expanded(
                           child: TextField(
                             controller: _codLabController,
+                            maxLines: 1,
                             style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                             decoration: InputDecoration(
                               labelText: 'Código Laboratorio',
@@ -834,6 +857,7 @@ _turbidimetroSeleccionado = eq.codigo;
                               labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
                               hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
                               border: InputBorder.none,
+                              isDense: true,
                             ),
                           ),
                         ),
@@ -850,12 +874,12 @@ _turbidimetroSeleccionado = eq.codigo;
                 builder: (context, value, child) {
                   final bool hasText = value.text.trim().isNotEmpty;
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding: const EdgeInsets.only(top: 12.0),
+                          padding: const EdgeInsets.only(top: 8.0),
                           child: Icon(
                             hasText ? Icons.check_circle : Icons.chat_bubble_outline,
                             color: hasText ? Colors.green : Colors.grey,
@@ -866,7 +890,7 @@ _turbidimetroSeleccionado = eq.codigo;
                         Expanded(
                           child: TextField(
                             controller: _obsController,
-                            maxLines: null,
+                            maxLines: 2,
                             style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                             decoration: InputDecoration(
                               labelText: 'Descripción / Observación',
@@ -874,6 +898,7 @@ _turbidimetroSeleccionado = eq.codigo;
                               labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
                               hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
                               border: InputBorder.none,
+                              isDense: true,
                             ),
                           ),
                         ),
@@ -1007,40 +1032,41 @@ _turbidimetroSeleccionado = eq.codigo;
           if (_isMonitoreoFallido)
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: _obsController,
-              builder: (context, value, child) {
-                final bool hasText = value.text.trim().isNotEmpty;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12.0),
-                        child: Icon(
-                          hasText ? Icons.check_circle : Icons.chat_bubble_outline,
-                          color: hasText ? Colors.green : Colors.grey,
-                          size: 24,
+            builder: (context, value, child) {
+              final bool hasText = value.text.trim().isNotEmpty;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Icon(
+                        hasText ? Icons.check_circle : Icons.chat_bubble_outline,
+                        color: hasText ? Colors.green : Colors.grey,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextField(
+                        controller: _obsController,
+                        maxLines: 2,
+                        style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+                        decoration: InputDecoration(
+                          labelText: 'Descripción / Observación',
+                          hintText: 'Ingrese observación / descripción',
+                          labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                          hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
+                          border: InputBorder.none,
+                          isDense: true,
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextField(
-                          controller: _obsController,
-                          maxLines: null,
-                          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
-                          decoration: InputDecoration(
-                            labelText: 'Descripción / Observación',
-                            hintText: 'Ingrese observación / descripción',
-                            labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                            hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
-                            border: InputBorder.none,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+                    ),
+                  ],
+                ),
+              );
+            },
             ),
           
           _buildPhotoPreview(isDarkMode),
