@@ -26,8 +26,9 @@ class _CampanasScreenState extends State<CampanasScreen> {
   int? _selectedProgramId;
   int? _selectedStationId;
   bool _isLoading = true;
+  Map<int, int> _stationStatuses = {};
   String? _cachePath;
-  String _currentLayerUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+  String _currentLayerUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   @override
   void initState() {
@@ -44,10 +45,17 @@ class _CampanasScreenState extends State<CampanasScreen> {
       // Initialize Cache Path for Offline Maps
       final cacheDir = await getApplicationDocumentsDirectory();
       
+      // Fetch Sync Statuses
+      final Map<int, int> statuses = {};
+      for (var s in stations) {
+        statuses[s.id] = await _dbHelper.getStationSyncStatus(s.id);
+      }
+      
       setState(() {
         _programs = programs;
         _allStations = stations;
         _filteredStations = stations;
+        _stationStatuses = statuses;
         _cachePath = '${cacheDir.path}/map_tiles_cache';
         _isLoading = false;
       });
@@ -73,8 +81,13 @@ class _CampanasScreenState extends State<CampanasScreen> {
         });
       } else {
         final stations = await _dbHelper.getStationsByProgram(programId);
+        final Map<int, int> statuses = {};
+        for (var s in stations) {
+          statuses[s.id] = await _dbHelper.getStationSyncStatus(s.id);
+        }
         setState(() {
           _filteredStations = stations;
+          _stationStatuses = statuses;
           _isLoading = false;
         });
 
@@ -218,11 +231,21 @@ class _CampanasScreenState extends State<CampanasScreen> {
                     ? CachedTileProvider(
                         store: FileCacheStore(_cachePath!),
                       )
-                    : null, // Fallback to network if path not ready
+                    : null,
+                  // Mejora de diagnóstico
+                  errorTileCallback: (tile, error, stackTrace) {
+                    debugPrint('❌ Error cargando tile: $error');
+                  },
                 ),
                 MarkerLayer(
                   markers: _filteredStations.map((s) {
                     final isSelected = s.id == _selectedStationId;
+                    final status = _stationStatuses[s.id] ?? -1;
+                    Color markerColor = Colors.red;
+                    if (status == 2) markerColor = Colors.green;
+                    if (status == 0) markerColor = Colors.orange;
+                    if (isSelected) markerColor = Colors.yellow;
+
                     return Marker(
                       point: LatLng(
                         double.parse(s.latitude.toString()), 
@@ -237,7 +260,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                           children: [
                             Icon(
                               Icons.location_on,
-                              color: isSelected ? Colors.yellow : Colors.red,
+                              color: markerColor,
                               size: isSelected ? 45 : 35,
                               shadows: const [Shadow(blurRadius: 10, color: Colors.black)],
                             ),
@@ -265,7 +288,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                 const RichAttributionWidget(
                   attributions: [
                     TextSourceAttribution(
-                      'Esri | DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community',
+                      '© OpenStreetMap contributors',
                     ),
                   ],
                 ),

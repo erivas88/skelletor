@@ -377,6 +377,55 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<List<Map<String, dynamic>>> getMonitoreosForExport() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT 
+        m.id AS ID,
+        COALESCE(p.name, 'N/A') AS Programa,
+        COALESCE(s.name, 'N/A') AS Estacion,
+        m.latitud AS Latitud,
+        m.longitud AS Longitud,
+        m.fecha_hora AS Fecha_Hora,
+        COALESCE(u.nombre || ' ' || u.apellido, 'N/A') AS Inspector,
+        COALESCE(ma.nombre_matriz, 'N/A') AS Matriz,
+        COALESCE(me.metodo, 'N/A') AS Metodo,
+        COALESCE(em.codigo, 'N/A') AS Equipo_Multiparametro,
+        COALESCE(et.codigo, 'N/A') AS Equipo_Turbidimetro,
+        COALESCE(en.codigo, 'N/A') AS Equipo_Nivel,
+        m.tipo_pozo AS Tipo_Pozo,
+        m.fecha_hora_nivel AS Fecha_Hora_Nivel,
+        m.nivel AS Nivel_Freatico,
+        m.profundidad AS Profundidad,
+        m.temperatura AS Temperatura,
+        m.ph AS pH,
+        m.conductividad AS Conductividad,
+        m.oxigeno AS Oxigeno_Disuelto,
+        m.turbiedad AS Turbiedad,
+        CASE WHEN m.hidroquimico = 1 THEN 'Sí' ELSE 'No' END AS Muestra_Hidroquimica,
+        CASE WHEN m.isotopico = 1 THEN 'Sí' ELSE 'No' END AS Muestra_Isotopica,
+        m.cod_laboratorio AS Codigo_Laboratorio,
+        CASE WHEN m.monitoreo_fallido = 1 THEN 'Sí' ELSE 'No' END AS Monitoreo_Fallido,
+        m.observacion AS Observaciones,
+        CASE 
+          WHEN m.is_draft = 1 THEN 'Borrador' 
+          WHEN m.is_draft = 0 THEN 'Finalizado (Pendiente)' 
+          WHEN m.is_draft = 2 THEN 'Enviado' 
+          ELSE 'Desconocido' 
+        END AS Estado_App
+      FROM monitoreos m
+      LEFT JOIN programs p ON m.programa_id = p.id
+      LEFT JOIN stations s ON m.estacion_id = s.id
+      LEFT JOIN usuarios u ON m.usuario_id = u.id_usuario
+      LEFT JOIN matrices ma ON m.matriz_id = ma.id_matriz
+      LEFT JOIN metodos me ON m.metodo_id = me.id_metodo
+      LEFT JOIN equipos em ON m.equipo_multi_id = em.id
+      LEFT JOIN equipos et ON m.turbidimetro_id = et.id
+      LEFT JOIN equipos en ON m.equipo_nivel_id = en.id
+      ORDER BY m.fecha_hora DESC
+    ''');
+  }
+
   Future<List<Map<String, dynamic>>> getPendingToSendMonitoreos() async {
     final db = await database;
     return await db.rawQuery('''
@@ -397,6 +446,25 @@ class DatabaseHelper {
       WHERE m.sync_status = 'success'
       ORDER BY m.fecha_hora DESC
     ''');
+  }
+
+  Future<int> getStationSyncStatus(int stationId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> results = await db.query(
+      'monitoreos',
+      where: 'estacion_id = ?',
+      whereArgs: [stationId],
+    );
+
+    if (results.isEmpty) return -1;
+
+    bool hasPending = results.any((m) => m['is_draft'] == 0);
+    if (hasPending) return 0;
+
+    bool hasSent = results.any((m) => m['is_draft'] == 2);
+    if (hasSent) return 2;
+
+    return -1;
   }
 
   Future<int> updateMonitoreoSyncStatus(int id, String status) async {

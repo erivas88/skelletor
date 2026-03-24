@@ -1,10 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import '../widgets/app_drawer.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
+import '../widgets/app_drawer.dart';
 
 class EnviarDatosScreen extends StatefulWidget {
   const EnviarDatosScreen({super.key});
@@ -15,6 +15,7 @@ class EnviarDatosScreen extends StatefulWidget {
 
 class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
+  
   List<Map<String, dynamic>> _recordsPending = [];
   List<Map<String, dynamic>> _recordsSent = [];
   Set<int> _selectedIds = {};
@@ -26,103 +27,132 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-    final pendingData = await _dbHelper.getPendingToSendMonitoreos();
-    final sentData = await _dbHelper.getSentMonitoreos();
-    
-    setState(() {
-      _recordsPending = pendingData;
-      _recordsSent = sentData;
-      _isLoading = false;
-      _selectedIds.clear();
-    });
-  }
-
-  Future<void> _log(String message) async {
-    final timestamp = DateTime.now().toIso8601String();
-    final logMessage = '[$timestamp] $message';
-    debugPrint(logMessage);
+  String formatDateTime(String? isoString) {
+    if (isoString == null || isoString.isEmpty) return 'Sin fecha';
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/sync_log.txt');
-      await file.writeAsString('$logMessage\n', mode: FileMode.append);
+      final DateTime dt = DateTime.parse(isoString);
+      return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (e) {
-      debugPrint('🚨 Error writing log: $e');
+      return isoString; // fallback
     }
   }
 
-  /// Converts an image to Base64 with prefix.
-  /// NOTE: For actual JPEG compression, packages like 'flutter_image_compress' or 'image' are recommended.
+  Future<void> _log(String message) async {
+    debugPrint(message);
+    // Aquí puedes mantener la lógica de escribir en el archivo txt si la tienes en dbHelper
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final allRecords = await _dbHelper.getMonitoreosList();
+      setState(() {
+        _recordsPending = allRecords.where((m) => m['is_draft'] == 0).toList();
+        _recordsSent = allRecords.where((m) => m['is_draft'] == 2).toList();
+        _selectedIds.clear();
+      });
+    } catch (e) {
+      await _log('Error cargando datos: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _verificarConexion() async {
+    try {
+      final config = await _dbHelper.getActiveUrlConfig();
+      if (config == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚠️ No hay URL configurada')));
+        return;
+      }
+      final String baseUrl = config['url'];
+      final Uri testUrl = Uri.parse(baseUrl);
+      
+      await _log('🔍 Verificando conexión a: $baseUrl');
+      
+      final response = await http.get(testUrl).timeout(const Duration(seconds: 10));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Conexión exitosa con el servidor en: $baseUrl'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ No se pudo conectar al servidor. Verifica tu red e IP.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<String?> _compressAndEncodeImage(String? path) async {
     if (path == null || path.isEmpty) return null;
     final file = File(path);
     if (!await file.exists()) return null;
-
     try {
       final bytes = await file.readAsBytes();
-      final base64String = base64Encode(bytes);
-      return 'data:image/jpeg;base64,$base64String';
+      return 'data:image/jpeg;base64,${base64Encode(bytes)}';
     } catch (e) {
-      await _log('⚠️ Error encoding image ($path): $e');
+      await _log('Error comprimiendo imagen: $e');
       return null;
     }
   }
 
   Future<void> _enviarDatosSeleccionados() async {
     if (_selectedIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecciona al menos un registro.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecciona al menos un registro para enviar')));
       return;
     }
 
-    await _log('🚀 [SYNC] Iniciando envío de ${_selectedIds.length} monitoreos al servidor...');
-    
-    // Loading overlay
+    // 1. Mostrar Loader Estático
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                CircularProgressIndicator(color: Colors.blue),
+                SizedBox(height: 20),
+                Text(
+                  'Sincronizando monitoreos con el servidor...',
+                  style: TextStyle(color: Colors.blue, fontSize: 16, fontWeight: FontWeight.w500),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
 
     try {
       final config = await _dbHelper.getActiveUrlConfig();
-      if (config == null) throw Exception('No hay una configuración de API activa.');
+      if (config == null) throw Exception('No hay URL configurada activa');
 
-      // --- DYNAMIC ENDPOINT RESOLUTION ---
       final endpoints = await _dbHelper.getEndpoints();
-      String? dynamicEndpoint;
+      String endpointPath = 'sync/monitoreos'; // Fallback
       
-      // Search for an endpoint containing 'sync' or 'monit'
-      for (var ep in endpoints) {
-        String name = (ep['nombre'] ?? '').toLowerCase();
-        if (name.contains('sync') || name.contains('monit')) {
-          dynamicEndpoint = ep['nombre'];
-          break;
-        }
+      try {
+        final target = endpoints.firstWhere((e) => e['nombre'].toString().contains('sync'));
+        endpointPath = target['nombre'];
+      } catch (_) {
+        await _log('No se encontró endpoint "sync", usando predeterminado.');
       }
 
-      if (dynamicEndpoint == null) {
-        throw Exception('No se encontró un endpoint dinámico para sincronización en la base de datos.');
-      }
+      final Uri syncUrl = Uri.parse(config['url'] + endpointPath);
+      List<Map<String, dynamic>> payloadList = [];
 
-      final baseUrl = config['url'];
-      final syncUrl = baseUrl.endsWith('/') ? '$baseUrl$dynamicEndpoint' : '$baseUrl/$dynamicEndpoint';
-      
-      await _log('🌐 [SYNC] POST Request dirigida a: $syncUrl');
+      final prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString('token') ?? '';
 
-      // --- PAYLOAD CONSTRUCTION ---
-      final List<Map<String, dynamic>> payloadList = [];
-      
       for (var record in _recordsPending) {
         if (_selectedIds.contains(record['id'])) {
-          await _log('📦 [SYNC] Procesando registro ID: ${record['id']} para envío...');
-          
-          final fotoPath = await _compressAndEncodeImage(record['foto_path']);
-          final fotoMulti = await _compressAndEncodeImage(record['foto_multiparametro']);
-          final fotoTurb = await _compressAndEncodeImage(record['foto_turbiedad']);
-
           payloadList.add({
             "id": record['id'],
             "device_id": "MOBILE-DATA",
@@ -152,122 +182,65 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             "nivel": record['nivel'],
             "latitud": record['latitud'],
             "longitud": record['longitud'],
-            "foto_path": fotoPath,
-            "foto_multiparametro": fotoMulti,
-            "foto_turbiedad": fotoTurb,
+            "foto_path": await _compressAndEncodeImage(record['foto_path']),
+            "foto_multiparametro": await _compressAndEncodeImage(record['foto_multiparametro']),
+            "foto_turbiedad": await _compressAndEncodeImage(record['foto_turbiedad']),
           });
         }
       }
 
-      final Map<String, dynamic> finalPayload = {"monitoreos": payloadList};
-      await _log('📦 [SYNC] Payload construido. Enviando ${payloadList.length} registros.');
+      final payload = {"monitoreos": payloadList};
+      
+      Map<String, String> headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
 
-      final auth = '${config['usuario']}:${config['contrasenia']}';
-      final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
+      if (token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+        await _log('🔑 Usando Autenticación Bearer Token.');
+      } else {
+        final auth = '${config['usuario']}:${config['contrasenia']}';
+        headers['Authorization'] = 'Basic ${base64Encode(utf8.encode(auth))}';
+        await _log('🔑 Token vacío. Usando Autenticación Basic como fallback.');
+      }
 
       final response = await http.post(
-        Uri.parse(syncUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': basicAuth,
-        },
-        body: jsonEncode(finalPayload),
-      ).timeout(const Duration(seconds: 45));
-
-      await _log('📡 [SYNC] Código de respuesta: ${response.statusCode}');
-      await _log('📄 [SYNC] Respuesta body: ${response.body}');
+        syncUrl,
+        headers: headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final jsonResponse = jsonDecode(response.body);
-        
-        // Handle server-side success confirmation
-        if (jsonResponse['status'] == 'success' && jsonResponse['data'] != null) {
-          List<dynamic> syncedIdsDyn = jsonResponse['data']['synced_ids'] ?? [];
-          List<int> syncedIds = syncedIdsDyn.map((e) => int.tryParse(e.toString()) ?? 0).where((e) => e > 0).toList();
-          
-          await _log('✅ [SYNC] Identificadores sincronizados confirmados por servidor: $syncedIds');
-
-          for (int id in syncedIds) {
-            await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
-          }
-        } else {
-          await _log('⚠️ [SYNC] Respuesta OK pero sin estructura de éxito específica. Aplicando fallback de estado.');
-          for (int id in _selectedIds) {
-            await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
-          }
+        for (int id in _selectedIds) {
+          await _dbHelper.updateRegistroMonitoreo(id, {'is_draft': 2}); // 2 = Enviado
         }
-        
         if (mounted) {
-          Navigator.pop(context); // Close loading
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sincronización finalizada correctamente.')),
-          );
+          Navigator.pop(context); // Cerrar loader
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Datos sincronizados correctamente'), backgroundColor: Colors.green));
           _loadData();
         }
       } else {
-        throw Exception('El servidor respondió con error: ${response.statusCode}');
+        throw Exception('Error del servidor: ${response.statusCode}');
       }
     } catch (e) {
-      await _log('❌ [SYNC] Error crítico: $e');
       if (mounted) {
-        Navigator.pop(context); // Close loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error en sincronización: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _verificarConexion() async {
-    await _log('🔍 [DEBUG] Verificando alcance de red con la URL base...');
-    try {
-      final config = await _dbHelper.getActiveUrlConfig();
-      if (config == null) throw Exception('No hay configuración activa.');
-      
-      final String baseUrl = config['url'];
-      final Uri testUrl = Uri.parse(baseUrl);
-      
-      await _log('🌐 [DEBUG] Intento de GET a URL base: $testUrl');
-
-      // Un simple GET a la raíz para verificar si el servidor responde
-      final response = await http.get(testUrl).timeout(const Duration(seconds: 10));
-      
-      await _log('📡 [DEBUG] El servidor respondió con status: ${response.statusCode}');
-
-      if (mounted) {
-        // Cualquier respuesta (200, 403, 404, etc.) significa que el servidor es alcanzable
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Conexión exitosa con el servidor en: $baseUrl'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      await _log('❌ [DEBUG] No se pudo conectar al servidor: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ No se pudo conectar al servidor. Verifica tu red e IP.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        Navigator.pop(context); // Cerrar loader
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error al enviar: $e'), backgroundColor: Colors.red));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        drawer: const AppDrawer(currentRoute: '/enviar_datos'),
         appBar: AppBar(
+          title: const Text('Enviar Datos'),
           backgroundColor: Theme.of(context).primaryColor,
-          elevation: 0,
-          title: const Text('Sync de Datos', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          iconTheme: const IconThemeData(color: Colors.white),
           actions: [
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -276,82 +249,57 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                 if (value == 'verificar') _verificarConexion();
               },
               itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'enviar',
-                  child: ListTile(
-                    leading: Icon(Icons.storage, color: Colors.blue),
-                    title: Text('Enviar datos a servidor'),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'verificar',
-                  child: ListTile(
-                    leading: Icon(Icons.sync_alt, color: Colors.orange),
-                    title: Text('Verificar conexion con servidor'),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                ),
+                const PopupMenuItem(value: 'enviar', child: ListTile(leading: Icon(Icons.cloud_upload), title: Text('Enviar datos a servidor'))),
+                const PopupMenuItem(value: 'verificar', child: ListTile(leading: Icon(Icons.sync_alt), title: Text('Verificar conexion con servidor'))),
               ],
-            ),
+            )
           ],
           bottom: const TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
-            indicatorWeight: 3,
             tabs: [
-              Tab(text: 'PENDIENTES'),
+              Tab(text: 'SIN ENVIAR'),
               Tab(text: 'ENVIADOS'),
             ],
           ),
         ),
+        drawer: const AppDrawer(currentRoute: '/enviar_datos'),
         body: TabBarView(
           children: [
-            _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildPendingList(),
-            _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildSentList(),
+            _buildSinEnviarTab(isDark),
+            _buildEnviadosTab(isDark),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPendingList() {
-    if (_recordsPending.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.cloud_done_outlined, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            const Text(
-              'No hay monitoreos pendientes',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final bool allSelected = _selectedIds.length == _recordsPending.length;
+  Widget _buildSinEnviarTab(bool isDark) {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    
+    final bool allSelected = _recordsPending.isNotEmpty && _selectedIds.length == _recordsPending.length;
 
     return Column(
       children: [
-        // Selection Header
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: TextField(
+            decoration: InputDecoration(
+              hintText: 'Buscar',
+              prefixIcon: const Icon(Icons.search),
+              filled: true,
+              fillColor: Theme.of(context).cardColor,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+            ),
+          ),
+        ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: Theme.of(context).cardColor,
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
           child: Row(
             children: [
               Checkbox(
                 value: allSelected,
-                activeColor: Theme.of(context).primaryColor,
                 onChanged: (val) {
                   setState(() {
                     if (val == true) {
@@ -362,99 +310,69 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                   });
                 },
               ),
-              const Text(
-                'Seleccionar Todo',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              const Text('Seleccionar Todo', style: TextStyle(fontWeight: FontWeight.bold)),
               const Spacer(),
               if (_selectedIds.isNotEmpty)
-                Text(
-                  '${_selectedIds.length} seleccionados',
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text('${_selectedIds.length} seleccionados', style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold)),
             ],
           ),
         ),
-        const Divider(height: 1),
+        const Divider(),
         Expanded(
-          child: ListView.separated(
-            itemCount: _recordsPending.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final record = _recordsPending[index];
-              final int id = record['id'];
-              final bool isSelected = _selectedIds.contains(id);
+          child: _recordsPending.isEmpty
+              ? const Center(child: Text('No hay datos pendientes de envío', style: TextStyle(color: Colors.grey)))
+              : ListView.builder(
+                  itemCount: _recordsPending.length,
+                  itemBuilder: (context, index) {
+                    final record = _recordsPending[index];
+                    final int id = record['id'];
+                    final bool isSelected = _selectedIds.contains(id);
 
-              return ListTile(
-                leading: Checkbox(
-                  value: isSelected,
-                  activeColor: Theme.of(context).primaryColor,
-                  onChanged: (val) {
-                    setState(() {
-                      if (val == true) {
-                        _selectedIds.add(id);
-                      } else {
-                        _selectedIds.remove(id);
-                      }
-                    });
+                    return ListTile(
+                      leading: Checkbox(
+                        value: isSelected,
+                        onChanged: (val) {
+                          setState(() {
+                            if (val == true) {
+                              _selectedIds.add(id);
+                            } else {
+                              _selectedIds.remove(id);
+                            }
+                          });
+                        },
+                      ),
+                      title: Text(record['nombre_estacion'] ?? 'Estación Desconocida', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(formatDateTime(record['fecha_hora'])),
+                      trailing: const Icon(Icons.check_circle_outline, color: Colors.amber),
+                      onTap: () {
+                        setState(() {
+                          if (isSelected) {
+                            _selectedIds.remove(id);
+                          } else {
+                            _selectedIds.add(id);
+                          }
+                        });
+                      },
+                    );
                   },
                 ),
-                title: Text(
-                  record['nombre_estacion'] ?? 'Estación S/N',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text('Fecha: ${record['fecha_hora'] ?? 'S/F'}'),
-                trailing: const Icon(Icons.pending_actions, color: Colors.orangeAccent),
-                onTap: () {
-                  setState(() {
-                    if (isSelected) {
-                      _selectedIds.remove(id);
-                    } else {
-                      _selectedIds.add(id);
-                    }
-                  });
-                },
-              );
-            },
-          ),
         ),
       ],
     );
   }
 
-  Widget _buildSentList() {
-    if (_recordsSent.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.history, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            const Text(
-              'Historial de envíos vacío',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
-            ),
-          ],
-        ),
-      );
-    }
+  Widget _buildEnviadosTab(bool isDark) {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_recordsSent.isEmpty) return const Center(child: Text('No hay datos enviados', style: TextStyle(color: Colors.grey)));
 
-    return ListView.separated(
+    return ListView.builder(
       itemCount: _recordsSent.length,
-      separatorBuilder: (context, index) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final record = _recordsSent[index];
         return ListTile(
           leading: const Icon(Icons.cloud_done, color: Colors.green),
-          title: Text(
-            record['nombre_estacion'] ?? 'Estación S/N',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Text('Enviado: ${record['fecha_hora'] ?? 'S/F'}'),
-          trailing: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+          title: Text(record['nombre_estacion'] ?? 'Estación Desconocida', style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text(formatDateTime(record['fecha_hora'])),
         );
       },
     );

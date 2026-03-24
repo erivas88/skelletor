@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 import 'registrar_monitoreo_screen.dart';
@@ -100,7 +103,25 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _confirmarEliminarTodo(context),
           ),
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'export_csv') {
+                _exportToCsvAndShare();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'export_csv',
+                child: ListTile(
+                  leading: Icon(Icons.share),
+                  title: Text('Compartir como CSV'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       drawer: const AppDrawer(currentRoute: '/monitoreos'),
@@ -193,9 +214,9 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         itemBuilder: (ctx, index) {
                           final item = _filteredMonitoreos[index];
-                          final bool isDraft = item['is_draft'] == 1;
+                          final int draftStatus = item['is_draft'] ?? 1;
+                          final bool isSynced = draftStatus == 2;
                           final bool isFallido = item['monitoreo_fallido'] == 'true' || item['monitoreo_fallido'] == 1 || item['monitoreo_fallido'] == 'SI';
-                          final bool isSynced = item['sync_status'] == 'success';
                           
                           final String nombrePunto = item['nombre_estacion']?.toString() ?? 'Sin Punto';
                           String fechaMostrada = 'Sin fecha';
@@ -245,11 +266,11 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                   contentPadding: const EdgeInsets.symmetric(
                                       horizontal: 16, vertical: 8),
                                   leading: CircleAvatar(
-                                    backgroundColor: isDraft 
-                                        ? Colors.orangeAccent 
-                                        : (isFallido ? Colors.redAccent : Colors.green),
+                                    backgroundColor: draftStatus == 1 
+                                        ? Colors.grey 
+                                        : (draftStatus == 0 ? Colors.orangeAccent : Colors.green),
                                     child: Icon(
-                                      isDraft ? Icons.edit_note : (isFallido ? Icons.error : Icons.check),
+                                      draftStatus == 1 ? Icons.edit_note : (draftStatus == 0 ? Icons.pending_actions : Icons.check),
                                       color: Colors.white,
                                     ),
                                   ),
@@ -268,18 +289,27 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                       ),
                                     ],
                                   ),
-                                  trailing: isDraft
+                                  trailing: draftStatus == 1
                                       ? Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: Colors.orange.withOpacity(0.2),
+                                            color: Colors.grey.withOpacity(0.2),
                                             borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(color: Colors.orange),
+                                            border: Border.all(color: Colors.grey),
                                           ),
-                                          child: const Text('BORRADOR', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                                          child: const Text('BORRADOR', style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
                                         )
-                                      : isSynced 
+                                      : draftStatus == 0
                                           ? Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange.withOpacity(0.2),
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(color: Colors.orange),
+                                              ),
+                                              child: const Text('PENDIENTE', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                                            )
+                                          : Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                               decoration: BoxDecoration(
                                                 color: Colors.green.withOpacity(0.2),
@@ -287,8 +317,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                                 border: Border.all(color: Colors.green),
                                               ),
                                               child: const Text('ENVIADO', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
-                                            )
-                                          : const Icon(Icons.arrow_forward_ios, size: 16),
+                                            ),
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -345,6 +374,65 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
           ),
         );
         _loadMonitoreos();
+      }
+    }
+  }
+
+  Future<void> _exportToCsvAndShare() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Generando archivo CSV...')),
+    );
+
+    try {
+      final List<Map<String, dynamic>> data = await _dbHelper.getMonitoreosForExport();
+      
+      if (data.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No hay monitoreos para exportar')),
+          );
+        }
+        return;
+      }
+
+      // 1. Cabeceras
+      final List<String> headers = data.first.keys.toList();
+      String csvData = headers.join(',') + '\n';
+
+      // 2. Filas con escaping
+      for (var row in data) {
+        final List<String> rowValues = headers.map((header) {
+          final dynamic value = row[header];
+          String valStr = (value ?? '').toString();
+          
+          // Escapar si tiene comas, comillas o saltos de línea
+          if (valStr.contains(',') || valStr.contains('"') || valStr.contains('\n')) {
+            valStr = '"' + valStr.replaceAll('"', '""') + '"';
+          }
+          return valStr;
+        }).toList();
+        
+        csvData += rowValues.join(',') + '\n';
+      }
+
+      // 3. Crear archivo temporal
+      final directory = await getTemporaryDirectory();
+      final String path = '${directory.path}/monitoreos_export.csv';
+      final file = File(path);
+      await file.writeAsString(csvData);
+
+      // 4. Compartir
+      if (mounted) {
+        await Share.shareXFiles(
+          [XFile(path)], 
+          text: 'Exportación de Monitoreos - ${DateFormat('yyyy-MM-dd').format(DateTime.now())}'
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al exportar: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
