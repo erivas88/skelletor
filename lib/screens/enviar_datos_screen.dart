@@ -52,15 +52,14 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
     }
   }
 
+  /// Converts an image to Base64 with prefix.
+  /// NOTE: For actual JPEG compression, packages like 'flutter_image_compress' or 'image' are recommended.
   Future<String?> _compressAndEncodeImage(String? path) async {
     if (path == null || path.isEmpty) return null;
     final file = File(path);
     if (!await file.exists()) return null;
 
     try {
-      // NOTE: Without flutter_image_compress or 'image' package, 
-      // we perform a straightforward Base64 encoding. 
-      // Resizing logic would typically be inserted here.
       final bytes = await file.readAsBytes();
       final base64String = base64Encode(bytes);
       return 'data:image/jpeg;base64,$base64String';
@@ -80,7 +79,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
     await _log('🚀 [SYNC] Iniciando envío de ${_selectedIds.length} monitoreos al servidor...');
     
-    // Show loading
+    // Loading overlay
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -91,11 +90,34 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       final config = await _dbHelper.getActiveUrlConfig();
       if (config == null) throw Exception('No hay una configuración de API activa.');
 
+      // --- DYNAMIC ENDPOINT RESOLUTION ---
+      final endpoints = await _dbHelper.getEndpoints();
+      String? dynamicEndpoint;
+      
+      // Search for an endpoint containing 'sync' or 'monit'
+      for (var ep in endpoints) {
+        String name = (ep['nombre'] ?? '').toLowerCase();
+        if (name.contains('sync') || name.contains('monit')) {
+          dynamicEndpoint = ep['nombre'];
+          break;
+        }
+      }
+
+      if (dynamicEndpoint == null) {
+        throw Exception('No se encontró un endpoint dinámico para sincronización en la base de datos.');
+      }
+
+      final baseUrl = config['url'];
+      final syncUrl = baseUrl.endsWith('/') ? '$baseUrl$dynamicEndpoint' : '$baseUrl/$dynamicEndpoint';
+      
+      await _log('🌐 [SYNC] POST Request dirigida a: $syncUrl');
+
+      // --- PAYLOAD CONSTRUCTION ---
       final List<Map<String, dynamic>> payloadList = [];
       
       for (var record in _recordsPending) {
         if (_selectedIds.contains(record['id'])) {
-          await _log('📦 [SYNC] Procesando registro ID: ${record['id']} (${record['nombre_estacion']})');
+          await _log('📦 [SYNC] Procesando registro ID: ${record['id']} para envío...');
           
           final fotoPath = await _compressAndEncodeImage(record['foto_path']);
           final fotoMulti = await _compressAndEncodeImage(record['foto_multiparametro']);
@@ -138,11 +160,8 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       }
 
       final Map<String, dynamic> finalPayload = {"monitoreos": payloadList};
-      final syncUrl = '${config['url']}sync/monitoreos';
-      
-      await _log('🌐 [SYNC] POST Request a: $syncUrl');
-      await _log('📦 [SYNC] Payload a enviar: ${jsonEncode(finalPayload)}');
-      
+      await _log('📦 [SYNC] Payload construido. Enviando ${payloadList.length} registros.');
+
       final auth = '${config['usuario']}:${config['contrasenia']}';
       final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
 
@@ -154,32 +173,26 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
           'Authorization': basicAuth,
         },
         body: jsonEncode(finalPayload),
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 45));
 
-      await _log('📡 [SYNC] Respuesta del servidor: ${response.statusCode}');
-      await _log('📄 [SYNC] Body: ${response.body}');
+      await _log('📡 [SYNC] Código de respuesta: ${response.statusCode}');
+      await _log('📄 [SYNC] Respuesta body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        try {
-          final jsonResponse = jsonDecode(response.body);
-          if (jsonResponse['status'] == 'success' && jsonResponse['data'] != null) {
-            List<dynamic> syncedIdsDyn = jsonResponse['data']['synced_ids'] ?? [];
-            List<int> syncedIds = syncedIdsDyn.map((e) => int.tryParse(e.toString()) ?? 0).where((e) => e > 0).toList();
-            
-            await _log('✅ [SYNC] Identificadores sincronizados confirmados: $syncedIds');
+        final jsonResponse = jsonDecode(response.body);
+        
+        // Handle server-side success confirmation
+        if (jsonResponse['status'] == 'success' && jsonResponse['data'] != null) {
+          List<dynamic> syncedIdsDyn = jsonResponse['data']['synced_ids'] ?? [];
+          List<int> syncedIds = syncedIdsDyn.map((e) => int.tryParse(e.toString()) ?? 0).where((e) => e > 0).toList();
+          
+          await _log('✅ [SYNC] Identificadores sincronizados confirmados por servidor: $syncedIds');
 
-            for (int id in syncedIds) {
-              await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
-            }
-          } else {
-             await _log('⚠️ [SYNC] Respuesta 200 pero sin estructura esperada.');
-             // Fallback standard behavior if format changes back
-             for (int id in _selectedIds) {
-               await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
-             }
+          for (int id in syncedIds) {
+            await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
           }
-        } catch (e) {
-          await _log('⚠️ [SYNC] No se pudo parsear synced_ids, marcando fallback: $e');
+        } else {
+          await _log('⚠️ [SYNC] Respuesta OK pero sin estructura de éxito específica. Aplicando fallback de estado.');
           for (int id in _selectedIds) {
             await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
           }
@@ -188,46 +201,58 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
         if (mounted) {
           Navigator.pop(context); // Close loading
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sincronización exitosa.')),
+            const SnackBar(content: Text('Sincronización finalizada correctamente.')),
           );
           _loadData();
         }
       } else {
-        throw Exception('Servidor respondió con código ${response.statusCode}');
+        throw Exception('El servidor respondió con error: ${response.statusCode}');
       }
     } catch (e) {
       await _log('❌ [SYNC] Error crítico: $e');
       if (mounted) {
         Navigator.pop(context); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Error en sincronización: $e')),
         );
       }
     }
   }
 
   Future<void> _verificarConexion() async {
-    await _log('🔍 [DEBUG] Verificando conexión con el servidor...');
+    await _log('🔍 [DEBUG] Verificando alcance de red con la URL base...');
     try {
       final config = await _dbHelper.getActiveUrlConfig();
       if (config == null) throw Exception('No hay configuración activa.');
       
-      final auth = '${config['usuario']}:${config['contrasenia']}';
-      final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
-
-      final response = await http.get(
-        Uri.parse(config['url']),
-        headers: {'Authorization': basicAuth},
-      ).timeout(const Duration(seconds: 10));
+      final String baseUrl = config['url'];
+      final Uri testUrl = Uri.parse(baseUrl);
       
+      await _log('🌐 [DEBUG] Intento de GET a URL base: $testUrl');
+
+      // Un simple GET a la raíz para verificar si el servidor responde
+      final response = await http.get(testUrl).timeout(const Duration(seconds: 10));
+      
+      await _log('📡 [DEBUG] El servidor respondió con status: ${response.statusCode}');
+
       if (mounted) {
+        // Cualquier respuesta (200, 403, 404, etc.) significa que el servidor es alcanzable
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Conexión: ${response.statusCode == 200 ? 'OK' : 'Error ${response.statusCode}'}')),
+          SnackBar(
+            content: Text('✅ Conexión exitosa con el servidor en: $baseUrl'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
+      await _log('❌ [DEBUG] No se pudo conectar al servidor: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ No se pudo conectar al servidor. Verifica tu red e IP.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -240,13 +265,10 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
         drawer: const AppDrawer(currentRoute: '/enviar_datos'),
         appBar: AppBar(
           backgroundColor: Theme.of(context).primaryColor,
+          elevation: 0,
+          title: const Text('Sync de Datos', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           iconTheme: const IconThemeData(color: Colors.white),
-          title: const Text('Enviar Datos', style: TextStyle(color: Colors.white)),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.storage, color: Colors.white),
-              onPressed: _selectedIds.isEmpty ? null : _enviarDatosSeleccionados,
-            ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.white),
               onSelected: (value) {
@@ -257,16 +279,18 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                 const PopupMenuItem(
                   value: 'enviar',
                   child: ListTile(
-                    leading: Icon(Icons.storage),
+                    leading: Icon(Icons.storage, color: Colors.blue),
                     title: Text('Enviar datos a servidor'),
+                    contentPadding: EdgeInsets.zero,
                     dense: true,
                   ),
                 ),
                 const PopupMenuItem(
                   value: 'verificar',
                   child: ListTile(
-                    leading: Icon(Icons.sync_alt),
+                    leading: Icon(Icons.sync_alt, color: Colors.orange),
                     title: Text('Verificar conexion con servidor'),
+                    contentPadding: EdgeInsets.zero,
                     dense: true,
                   ),
                 ),
@@ -277,20 +301,18 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
+            indicatorWeight: 3,
             tabs: [
-              Tab(text: 'SIN ENVIAR'),
+              Tab(text: 'PENDIENTES'),
               Tab(text: 'ENVIADOS'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            // Tab 1: SIN ENVIAR
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _buildPendingList(),
-            
-            // Tab 2: ENVIADOS
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _buildSentList(),
@@ -302,46 +324,37 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
   Widget _buildPendingList() {
     if (_recordsPending.isEmpty) {
-      return const Center(
-        child: Text(
-          'No hay datos pendientes de envío',
-          style: TextStyle(color: Colors.grey, fontSize: 16),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_done_outlined, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            const Text(
+              'No hay monitoreos pendientes',
+              style: TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+          ],
         ),
       );
     }
 
-    final bool allSelected = _selectedIds.length == _recordsPending.length && _recordsPending.isNotEmpty;
+    final bool allSelected = _selectedIds.length == _recordsPending.length;
 
     return Column(
       children: [
-        // --- SEARCH BAR ---
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: 'Buscar',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: Theme.of(context).cardColor,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 0),
-            ),
-          ),
-        ),
-
-        // --- SELECCIONAR TODO row ---
+        // Selection Header
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: Theme.of(context).cardColor,
           child: Row(
             children: [
               Checkbox(
                 value: allSelected,
-                onChanged: (v) {
+                activeColor: Theme.of(context).primaryColor,
+                onChanged: (val) {
                   setState(() {
-                    if (v == true) {
+                    if (val == true) {
                       _selectedIds = _recordsPending.map((r) => r['id'] as int).toSet();
                     } else {
                       _selectedIds.clear();
@@ -355,20 +368,17 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
               ),
               const Spacer(),
               if (_selectedIds.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(right: 16.0),
-                  child: Text(
-                    '${_selectedIds.length} seleccionados',
-                    style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 12),
+                Text(
+                  '${_selectedIds.length} seleccionados',
+                  style: TextStyle(
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
             ],
           ),
         ),
-
-        const Divider(),
-
-        // --- DATA LIST ---
+        const Divider(height: 1),
         Expanded(
           child: ListView.separated(
             itemCount: _recordsPending.length,
@@ -381,9 +391,10 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
               return ListTile(
                 leading: Checkbox(
                   value: isSelected,
-                  onChanged: (v) {
+                  activeColor: Theme.of(context).primaryColor,
+                  onChanged: (val) {
                     setState(() {
-                      if (v == true) {
+                      if (val == true) {
                         _selectedIds.add(id);
                       } else {
                         _selectedIds.remove(id);
@@ -392,22 +403,11 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                   },
                 ),
                 title: Text(
-                  record['nombre_estacion'] ?? 'Estación Desconocida',
+                  record['nombre_estacion'] ?? 'Estación S/N',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                subtitle: Text(record['fecha_hora'] ?? 'S/F'),
-                trailing: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.yellowAccent.withValues(alpha: 0.5)),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Icon(
-                    Icons.check_circle_outline,
-                    color: Colors.yellowAccent,
-                    size: 20,
-                  ),
-                ),
+                subtitle: Text('Fecha: ${record['fecha_hora'] ?? 'S/F'}'),
+                trailing: const Icon(Icons.pending_actions, color: Colors.orangeAccent),
                 onTap: () {
                   setState(() {
                     if (isSelected) {
@@ -427,10 +427,17 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
   Widget _buildSentList() {
     if (_recordsSent.isEmpty) {
-      return const Center(
-        child: Text(
-          'No hay datos enviados',
-          style: TextStyle(color: Colors.grey, fontSize: 16),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.history, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            const Text(
+              'Historial de envíos vacío',
+              style: TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+          ],
         ),
       );
     }
@@ -441,24 +448,13 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       itemBuilder: (context, index) {
         final record = _recordsSent[index];
         return ListTile(
-          leading: const Icon(Icons.file_upload, color: Colors.grey),
+          leading: const Icon(Icons.cloud_done, color: Colors.green),
           title: Text(
-            record['nombre_estacion'] ?? 'Estación Desconocida',
+            record['nombre_estacion'] ?? 'Estación S/N',
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          subtitle: Text(record['fecha_hora'] ?? 'S/F'),
-          trailing: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: const Icon(
-              Icons.check,
-              color: Colors.green,
-              size: 20,
-            ),
-          ),
+          subtitle: Text('Enviado: ${record['fecha_hora'] ?? 'S/F'}'),
+          trailing: const Icon(Icons.check_circle, color: Colors.green, size: 20),
         );
       },
     );

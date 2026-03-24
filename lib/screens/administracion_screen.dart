@@ -26,13 +26,14 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<Map<String, dynamic>> _equipos = [];
   List<TipoEquipo> _tiposEquipo = [];
   List<Parametro> _parametros = [];
+  List<Map<String, dynamic>> _endpoints = [];
   String _searchQuery = '';
   int? _selectedProgramaFilter;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 8, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {
@@ -61,6 +62,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
       final equipos = await _dbHelper.getAllEquiposWithTipo();
       final tiposEquipo = await _dbHelper.getTiposEquipo();
       final parametros = await _dbHelper.getParametros();
+      final endpoints = await _dbHelper.getEndpoints();
 
       setState(() {
         _usuarios = usuarios;
@@ -71,6 +73,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         _equipos = equipos; 
         _tiposEquipo = tiposEquipo; 
         _parametros = parametros;
+        _endpoints = endpoints;
         _isLoading = false;
       });
     } catch (e) {
@@ -143,6 +146,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         _unidadController.text = item.unidad;
         _minController.text = item.min?.toString() ?? '';
         _maxController.text = item.max?.toString() ?? '';
+      } else if (type == 'Endpoint') {
+        c1.text = item['nombre'] ?? '';
       }
     }
 
@@ -223,6 +228,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       ],
                     ),
                   ],
+                ] else if (type == 'Endpoint') ...[
+                  TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre del Endpoint')),
                 ],
               ],
             ),
@@ -298,6 +305,10 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       max: double.tryParse(_maxController.text.trim()),
                     );
                     isEdit ? await _dbHelper.updateParametro(p) : await _dbHelper.addParametro(p);
+                  } else if (type == 'Endpoint') {
+                    final name = c1.text.trim();
+                    if (name.isEmpty) throw Exception('El nombre no puede estar vacío');
+                    isEdit ? await _dbHelper.updateEndpoint(item['id'], name) : await _dbHelper.addEndpoint(name);
                   }
                   if (mounted) Navigator.pop(context);
                   _loadAllData();
@@ -330,6 +341,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               else if (type == 'Estación') await _dbHelper.deleteStation(id);
               else if (type == 'Equipo') await _dbHelper.deleteEquipo(id);
               else if (type == 'Parámetro') await _dbHelper.deleteParametro(id);
+              else if (type == 'Endpoint') await _dbHelper.deleteEndpoint(id);
               if (mounted) Navigator.pop(context);
               _loadAllData();
             },
@@ -385,6 +397,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               Tab(text: 'Estaciones'),
               Tab(text: 'Equipos'),
               Tab(text: 'Parámetros'),
+              Tab(text: 'Endpoints'),
             ],
           ),
         ),
@@ -401,11 +414,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   _buildStationsTab(),
                   _buildEquiposTab(),
                   _buildTabList(_parametros, 'Parámetro'),
+                  _buildTabList(_endpoints, 'Endpoint'),
                 ],
               ),
         floatingActionButton: FloatingActionButton(
           onPressed: () {
-            final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo', 'Parámetro'];
+            final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo', 'Parámetro', 'Endpoint'];
             _showFormDialog(type: types[_tabController.index]);
           },
           child: const Icon(Icons.add),
@@ -430,6 +444,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         searchField = item.name;
       } else if (type == 'Parámetro') {
         searchField = item.nombreParametro;
+      } else if (type == 'Endpoint') {
+        searchField = item['nombre'] ?? '';
       }
       return searchField.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
@@ -480,6 +496,10 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                 title = item.nombreParametro;
                 subtitle = '';
                 id = item.idParametro;
+              } else if (type == 'Endpoint') {
+                title = item['nombre'] ?? 'S/N';
+                subtitle = '';
+                id = item['id'];
               }
 
               return ListTile(

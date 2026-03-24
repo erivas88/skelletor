@@ -17,12 +17,20 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   List<Map<String, dynamic>> _monitoreos = [];
   List<Map<String, dynamic>> _filteredMonitoreos = [];
   final TextEditingController _searchController = TextEditingController();
+  bool _sortAscending = false;
 
   @override
   void initState() {
     super.initState();
     _loadMonitoreos();
     _searchController.addListener(_filterMonitoreos);
+  }
+
+  void _toggleSort() {
+    setState(() {
+      _sortAscending = !_sortAscending;
+      _filterMonitoreos();
+    });
   }
 
   @override
@@ -55,6 +63,12 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
         final station = (m['estacion_name'] ?? '').toString().toLowerCase();
         return station.contains(query);
       }).toList();
+
+      _filteredMonitoreos.sort((a, b) {
+        final idA = a['id'] as int? ?? 0;
+        final idB = b['id'] as int? ?? 0;
+        return _sortAscending ? idA.compareTo(idB) : idB.compareTo(idA);
+      });
     });
   }
 
@@ -77,7 +91,11 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
       appBar: AppBar(
         title: const Text('Monitoreos'),
         actions: [
-          IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
+          IconButton(
+            icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.filter_list),
+            tooltip: _sortAscending ? 'Más antiguo primero' : 'Más reciente primero',
+            onPressed: _toggleSort,
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _confirmarEliminarTodo(context),

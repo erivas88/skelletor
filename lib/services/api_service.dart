@@ -5,6 +5,30 @@ import '../database/database_helper.dart';
 class ApiService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
+  Future<Map<String, dynamic>> fetchNamespacedEndpoint(String endpoint) async {
+    final config = await _dbHelper.getActiveUrlConfig();
+    if (config == null) throw Exception('No hay una configuración de API activa.');
+
+    final baseUrl = config['url'];
+    final auth = '${config['usuario']}:${config['contrasenia']}';
+    final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: {'Authorization': basicAuth},
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('Failed to load $endpoint: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('API Error ($endpoint): $e');
+    }
+  }
+
   Future<Map<String, dynamic>> fetchAllData() async {
     final config = await _dbHelper.getActiveUrlConfig();
     if (config == null) throw Exception('No hay una configuración de API activa.');
@@ -14,9 +38,12 @@ class ApiService {
     final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
 
     final endpointData = await _dbHelper.getEndpoints();
-    final endpoints = endpointData.map((e) => e['nombre'].toString()).toList();
+    final endpoints = endpointData
+        .map((e) => e['nombre'].toString())
+        .where((name) => name != 'sync/monitoreos')
+        .toList();
     
-    if (endpoints.isEmpty) throw Exception('No hay endpoints configurados.');
+    if (endpoints.isEmpty) throw Exception('No hay endpoints configurados para sincronizar.');
 
     final Map<String, dynamic> allResults = {};
 

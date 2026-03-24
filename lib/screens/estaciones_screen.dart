@@ -56,10 +56,14 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
     try {
       final ApiService apiService = ApiService();
       setState(() => _loadingMessage = 'Conectando con el servidor...');
-      final data = await apiService.fetchAllData();
+      final data = await apiService.fetchNamespacedEndpoint('campanas');
       
       setState(() => _loadingMessage = 'Sincronizando programas y estaciones...');
-      await _dbHelper.syncData(data);
+      if (data.containsKey('campanas')) {
+        await _dbHelper.syncCampanas(data['campanas']);
+      } else {
+        throw Exception('El servidor no retornó la lista de campañas.');
+      }
       
       setState(() => _loadingMessage = 'Actualizando datos locales...');
       await _loadData();
